@@ -150,7 +150,12 @@ int ble_gap_event(struct ble_gap_event *event, void *arg) {
 
 /* ---- 호스트 sync/reset 콜백 ---- */
 static void on_sync(void) {
-    ble_hs_id_infer_auto(0, NULL);
+    uint8_t own_addr_type;
+    int rc = ble_hs_id_infer_auto(0, &own_addr_type);
+    if (rc != 0) {
+        ESP_LOGE(TAG, "ble_hs_id_infer_auto 실패: rc=%d", rc);
+        return;
+    }
     ble_app_advertise();
 }
 
