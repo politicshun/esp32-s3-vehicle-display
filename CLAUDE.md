@@ -1,0 +1,71 @@
+# CLAUDE.md — ESP32-S3 차량 클러스터 프로젝트
+
+Claude Code(및 다른 AI 에이전트)가 이 저장소에서 작업할 때 반드시 따라야 하는 규칙.
+
+## 0. 최우선 원칙
+
+**"AI가 확인할 수 없는 사양은 존재하지 않는 사양이다."**
+`docs/`에 없는 값은 안다고 가정하지 말 것. 실제 파일을 읽거나, 사용자에게 물어보거나,
+`docs/`에 `확인필요`로 명시적으로 남겨라. 절대 그럴듯한 값을 지어내서 코드에 채우지 않는다.
+
+## 1. 소스 오브 트루스 순서 (충돌 시 왼쪽이 이긴다)
+
+```
+1. docs/hardware/schematic-netlist.md   (스키매틱 넷리스트 발췌 — 물리적 진실)
+2. main/pin_config.h, include/*.h        (실제 컴파일되는 코드)
+3. docs/design/*.md                      (설계 근거 문서)
+4. PPT/인수인계 문서 등 그 외 산출물     (파생 문서, 참고용일 뿐 권위 없음)
+```
+
+새 코드를 쓰기 전에 1·2번이 최신 상태인지 먼저 확인한다. 어긋나 있으면 코드를 쓰지 말고
+먼저 사용자에게 어느 쪽이 맞는지 확인한다.
+
+## 2. 코드 생성 전 체크리스트 (필수, 생략 금지)
+
+- [ ] 이 코드가 참조하는 매크로/함수/구조체 필드가 **실제로 이 저장소 안에 존재하는지** `grep`으로 먼저 확인했는가?
+      (존재하지 않으면 새로 정의하기 전에 `docs/hardware/pin_config.md`와 대조)
+- [ ] **파일 경로를 "이럴 것 같다"로 가정하지 않았는가?** 명령어에 경로를 쓰기 전에
+      `Get-ChildItem -Recurse -Filter <파일명>` (또는 `find`)으로 실제 경로를 먼저 확인한다.
+      이 프로젝트는 `pin_config.h`가 `include/`가 아니라 `main/include/`에 있다 — 프로젝트 루트 구조를
+      다른 ESP-IDF 프로젝트의 일반적인 관례로 넘겨짚지 말 것.
+- [ ] 외부 라이브러리(ESP-IDF, LVGL, esp_lcd_touch_gt911 등) API를 쓴다면,
+      `docs/design/toolchain-versions.md`에 기록된 버전 기준으로 쓰고 있는가?
+      기록이 없거나 오래됐으면 `idf.py --version` 결과를 먼저 요청/확인한다.
+- [ ] 확정할 수 없는 값이 하나라도 있으면, 코드에 채우지 말고 다음 중 하나를 한다:
+      (a) 사용자에게 파일/버전을 요청 (b) 공식 문서를 검색해서 확정 (c) `// HARNESS-TODO: 확인필요` 마커
+
+## 3. "안내"와 "산출물"을 구분한다
+
+설치·설정 명령을 사용자에게 텍스트로만 전달하지 않는다. 가능하면 실제 파일
+(`idf_component.yml`, 설정 헤더 등)을 직접 생성해서 저장소에 반영한다.
+텍스트 안내로 끝냈다면, 다음 턴에서 반드시 "실제로 반영됐는지" 확인 질문을 스스로 넣는다.
+
+## 4. 빌드 게이트 (수정 후 반드시 실행)
+
+```
+docs/../verify.ps1   (Windows, idf.py build 실행 + 에러 파싱)
+```
+`main/`, `include/` 아래 파일을 수정했다면, 결과를 사용자에게 넘기기 전에
+이 게이트를 통과했는지 먼저 확인한다 (직접 실행 못 하는 환경이면, 사용자에게
+`verify.ps1` 실행을 요청하고 **그 결과를 받기 전까지는 "완료"라고 말하지 않는다**).
+
+## 5. 이 저장소 특유의 함정 (실제로 겪은 것들 — 재발 방지용)
+
+- CH422G EXIO 비트는 `pin_config.h`의 이름을 그대로 쓴다. 임의로 새 매크로 이름을 만들지 않는다
+  (과거 `CH422G_EXIO_CAN_SEL`을 지어냈다가 실제로는 `CH422G_EXIO_USB_SEL`이라 undeclared 에러가 났음).
+- `esp_lcd_rgb_panel_config_t` 등 esp_lcd 관련 구조체는 ESP-IDF 버전에 따라 필드가 바뀐다.
+  `docs/design/toolchain-versions.md`의 버전을 반드시 확인하고 API를 쓴다.
+- PPT/인수인계 문서의 표는 이전 표를 복사해서 만들어진 경우가 많아 Signal/Purpose 열이
+  잘못 남아있을 수 있다. 표 안에서 Pin 열과 Signal/Purpose 열의 의미가 서로 안 맞으면
+  (예: CAN 표인데 "터치 데이터"라고 적혀 있으면) 복붙 잔재를 의심하고 원본과 대조한다.
+- `pin_config.h`의 실제 경로는 `main/include/pin_config.h`다 (프로젝트 루트의 `include/`가 아님).
+  다른 ESP-IDF 프로젝트에서 흔한 구조를 이 저장소에도 적용될 거라 가정하고 스크립트/문서에
+  경로를 적으면 `FileNotFoundError`가 난다 — 실제로 한 번 발생했음.
+- `main/ui/*.c`에서 `lv_font_montserrat_NN`을 쓰려면 menuconfig에서 해당 크기의
+  `CONFIG_LV_FONT_MONTSERRAT_NN`을 별도로 켜야 한다 (코드에서 참조한다고 자동으로 켜지지 않음).
+- `scripts\setup_env.ps1`은 (a) BOM 없는 UTF-8로 저장되면 PowerShell 5.1이 한글/이모지를 시스템
+  코드페이지로 잘못 해석해 `missing terminator` 파싱 에러를 낸다 (BOM 필요, 실제로 두 번 재발함) —
+  에디터가 저장할 때 BOM을 다시 벗겨낼 수 있으니 이상 증상 재발 시 제일 먼저 이걸 의심할 것.
+  (b) 반드시 지금 쓰는 세션 "안에서" `& .\scripts\setup_env.ps1` 또는 `. .\scripts\setup_env.ps1`로
+  실행해야 한다 — `powershell -File scripts\setup_env.ps1`처럼 새 프로세스를 띄우면 그 프로세스가
+  끝나는 순간 IDF_PATH/PATH가 같이 사라져서 원래 세션에서는 `idf.py`가 계속 인식되지 않는다.

@@ -1,0 +1,16 @@
+# ESP-IDF build output (재생성 가능)
+build/
+
+# ESP-IDF 컴포넌트 매니저가 idf_component.yml로부터 재다운로드하는 의존성
+managed_components/
+
+# menuconfig가 남기는 이전 sdkconfig 백업
+sdkconfig.old
+
+# 에디터/OS 잡파일
+.vscode/
+*.swp
+Thumbs.db
+
+# Claude Code 로컬 전용 설정 (개인별 권한 오버라이드, 공유 대상 아님)
+.claude/settings.local.json

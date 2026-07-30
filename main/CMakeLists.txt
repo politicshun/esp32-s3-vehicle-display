@@ -1,0 +1,22 @@
+idf_component_register(
+    SRCS 
+        "main.c"
+        "init.c"
+        "vehicle_data.c"
+        "twai.c"
+        "ble.c"
+        "lvgl.c"
+        "ui/ui.c"
+        "ui/ui_style.c"
+    INCLUDE_DIRS 
+        "include"
+        "."
+        "ui"
+    REQUIRES 
+        freertos
+        driver 
+        esp_driver_twai
+        esp_lcd 
+        lvgl 
+        bt
+)
