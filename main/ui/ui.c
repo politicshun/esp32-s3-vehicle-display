@@ -44,9 +44,9 @@ static lv_obj_t *dot_vehicle;
 /* ---------------------------------------------------------------------
  * 공통 헬퍼
  * ------------------------------------------------------------------- */
-static lv_obj_t *make_page(lv_obj_t *tv)
+static lv_obj_t *make_page(lv_obj_t *tv, uint8_t col_id)
 {
-    lv_obj_t *page = lv_tileview_add_tile(tv, 0, 0, LV_DIR_HOR);
+    lv_obj_t *page = lv_tileview_add_tile(tv, col_id, 0, LV_DIR_HOR);
     lv_obj_add_style(page, &ui_style_bg, 0);
     lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE);
     return page;
@@ -68,7 +68,7 @@ static lv_obj_t *make_todo_label(lv_obj_t *parent, const char *title)
  * ------------------------------------------------------------------- */
 static void build_page_drive(lv_obj_t *tv)
 {
-    lv_obj_t *page = make_page(tv);
+    lv_obj_t *page = make_page(tv, 0);
 
     /* HARNESS-TODO: gear(N/D) 필드가 VehicleData_t에 없어 뱃지 대신 안내 라벨만 배치.
      * 필드 추가되면 make_gear_badge 형태(이전 리비전 참고)로 교체 가능. */
@@ -97,7 +97,7 @@ static void build_page_drive(lv_obj_t *tv)
  * ------------------------------------------------------------------- */
 static void build_page_battery(lv_obj_t *tv)
 {
-    lv_obj_t *page = make_page(tv);
+    lv_obj_t *page = make_page(tv, 1);
 
     arc_soc = lv_arc_create(page);
     lv_obj_set_size(arc_soc, 220, 220);
@@ -135,7 +135,7 @@ static void build_page_battery(lv_obj_t *tv)
  * ------------------------------------------------------------------- */
 static void build_page_diag(lv_obj_t *tv)
 {
-    lv_obj_t *page = make_page(tv);
+    lv_obj_t *page = make_page(tv, 2);
 
     banner_dtc = lv_obj_create(page);
     lv_obj_remove_style_all(banner_dtc);
@@ -182,7 +182,7 @@ static lv_obj_t *make_status_dot(lv_obj_t *parent)
 
 static void build_page_connect(lv_obj_t *tv)
 {
-    lv_obj_t *page = make_page(tv);
+    lv_obj_t *page = make_page(tv, 3);
 
     dot_ble = make_status_dot(page);
     lv_obj_align(dot_ble, LV_ALIGN_TOP_LEFT, 16, 24);
