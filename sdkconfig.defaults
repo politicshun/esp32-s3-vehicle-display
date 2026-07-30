@@ -14,6 +14,14 @@ CONFIG_BT_BLUEDROID_ENABLED=n
 # --- Flash size (ESP32-S3-WROOM-1-N8R8, 8MB Flash) ---
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 
+# --- Partition table: 8MB 플래시 중 기본 partitions_singleapp.csv는 factory에 1M만
+#     할당해서 UI 이미지 에셋 추가만으로 여유가 17%까지 떨어짐(2026-07-30, docs/design/ui-layout.md).
+#     factory를 4M로 늘린 커스텀 테이블(partitions.csv)로 교체 — 8MB 중 nvs+phy_init+factory
+#     합쳐도 4.03MB만 써서 향후 에셋 작업 여유를 크게 확보한다. ---
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
 # --- PSRAM (ESP32-S3-WROOM-1-N8R8의 R8 = Octal 임베디드 PSRAM 8MB) ---
 # 실기기 부팅 로그(esptool)에서 "Embedded PSRAM 8MB (AP_3v3)"로 실측 확인(2026-07-30).
 # 옵션명은 IDF v6.0.2 설치 경로의 esp_psram/esp32s3/Kconfig.spiram 및

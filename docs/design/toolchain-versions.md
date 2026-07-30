@@ -21,6 +21,15 @@
   `Embedded PSRAM 8MB (AP_3v3)` 실측 확인 후 `CONFIG_SPIRAM`/`CONFIG_SPIRAM_MODE_OCT`/
   `CONFIG_SPIRAM_SPEED_80M`을 sdkconfig 및 sdkconfig.defaults에 반영. 이전엔 PSRAM 미설정 상태라
   `esp_lcd_new_rgb_panel()`의 `fb_in_psram=true`가 "no mem for frame buffer"로 실패했음.
+- 2026-07-30: 앱 파티션 크기 1M → 4M로 확장 (`partitions.csv` 신규 추가,
+  `CONFIG_PARTITION_TABLE_CUSTOM`/`CONFIG_PARTITION_TABLE_CUSTOM_FILENAME`으로 전환).
+  기본 제공 `partitions_singleapp.csv`는 8MB 플래시 중 factory 앱에 1M만 할당해서
+  UI 글로우 이미지 에셋을 조금 추가한 것만으로 여유가 17%까지 떨어짐(`docs/design/ui-layout.md`
+  참고). 8MB 중 nvs(24K)+phy_init(4K)+factory(4M)를 합쳐도 4.03M만 쓰므로 나머지 ~4MB는
+  향후 OTA 파티션 등에 여유로 남겨둠. 빌드 게이트로 확인한 free space: 17% → 79%
+  (`0x32b390 bytes free`). 실기기(COM12) 재플래싱 후 부팅 로그로 파티션 테이블
+  (`factory ... 00400000`), BLE 어드버타이징, TWAI 드라이버, LVGL/GT911 터치 초기화까지
+  전부 정상 확인.
 
 ## API 사용 전 확인 규칙
 - `esp_lcd_*` 관련 구조체를 쓸 때는 위 ESP-IDF 버전에 해당하는 헤더를
