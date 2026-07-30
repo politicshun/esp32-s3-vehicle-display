@@ -75,6 +75,8 @@ static esp_err_t lcd_panel_init(void) {
         },
         .data_width = 16,
         .num_fbs = 1,
+        .dma_burst_size = 64,
+        .bounce_buffer_size_px = 20 * LCD_H_RES,
         .hsync_gpio_num = LCD_HSYNC_GPIO,
         .vsync_gpio_num = LCD_VSYNC_GPIO,
         .de_gpio_num = LCD_DE_GPIO,
