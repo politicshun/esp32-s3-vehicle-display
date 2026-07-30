@@ -33,3 +33,9 @@ CONFIG_I2C_SUPPRESS_DEPRECATE_WARN=y
 #     (2026-07-29). ---
 CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
+
+# --- LVGL 리프레시/입력 폴링 주기: lvgl_ui_task의 20ms 루프 주기와 맞춤(2026-07-30).
+#     기본값 30ms에서는 20ms마다 도는 태스크 루프 중 일부가 lv_timer_handler() 안에서
+#     "아직 주기 안 지남"으로 버려져 드래그 반응이 뻑뻑하게 느껴짐. ---
+CONFIG_LV_DISP_DEF_REFR_PERIOD=20
+CONFIG_LV_INDEV_DEF_READ_PERIOD=20

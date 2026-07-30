@@ -312,6 +312,63 @@ void ui_init(lv_obj_t *parent)
     lv_obj_add_event_cb(tileview, tileview_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
+/* speed/soc 아크+숫자를 한 애니메이션으로 같이 움직여서(exec_cb 안에서 둘 다 갱신)
+ * 실차 클러스터처럼 값이 순간 이동하지 않고 부드럽게 스윕되도록 한다. */
+#define UI_GAUGE_ANIM_TIME_MS 250
+
+static void anim_speed_exec_cb(void *var, int32_t v)
+{
+    (void)var;
+    lv_arc_set_value(arc_speed, (int16_t)v);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%u", (unsigned)v);
+    lv_label_set_text(lbl_speed, buf);
+}
+
+static void animate_speed_to(int32_t target)
+{
+    static int32_t last_target = -1;
+    if (target == last_target) return;
+    last_target = target;
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, arc_speed);
+    lv_anim_set_exec_cb(&a, anim_speed_exec_cb);
+    lv_anim_set_values(&a, lv_arc_get_value(arc_speed), target);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+}
+
+static void anim_soc_exec_cb(void *var, int32_t v)
+{
+    (void)var;
+    lv_arc_set_value(arc_soc, (int16_t)v);
+    lv_obj_set_style_arc_color(arc_soc,
+        v <= UI_SOC_LOW_PCT ? UI_COLOR_RED : UI_COLOR_CYAN,
+        LV_PART_INDICATOR);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%u%%", (unsigned)v);
+    lv_label_set_text(lbl_soc_pct, buf);
+}
+
+static void animate_soc_to(int32_t target)
+{
+    static int32_t last_target = -1;
+    if (target == last_target) return;
+    last_target = target;
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, arc_soc);
+    lv_anim_set_exec_cb(&a, anim_soc_exec_cb);
+    lv_anim_set_values(&a, lv_arc_get_value(arc_soc), target);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+}
+
 void ui_update(void)
 {
     VehicleData_t d;
@@ -320,17 +377,10 @@ void ui_update(void)
     char buf[32];
 
     /* Page 1 */
-    lv_arc_set_value(arc_speed, d.speed);
-    snprintf(buf, sizeof(buf), "%u", (unsigned)d.speed);
-    lv_label_set_text(lbl_speed, buf);
+    animate_speed_to(d.speed);
 
     /* Page 2 */
-    lv_arc_set_value(arc_soc, d.soc);
-    lv_obj_set_style_arc_color(arc_soc,
-        d.soc <= UI_SOC_LOW_PCT ? UI_COLOR_RED : UI_COLOR_CYAN,
-        LV_PART_INDICATOR);
-    snprintf(buf, sizeof(buf), "%u%%", (unsigned)d.soc);
-    lv_label_set_text(lbl_soc_pct, buf);
+    animate_soc_to(d.soc);
 
     snprintf(buf, sizeof(buf), "%.1f V", d.pack_volt);
     lv_label_set_text(lbl_pack_volt, buf);

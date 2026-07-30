@@ -18,9 +18,10 @@ static const char *TAG = "LVGL_TASK";
 #define LCD_H_RES 800
 #define LCD_V_RES 480
 
-// LVGL 드로우 버퍼: 화면 전체가 아니라 1/10 높이 정도만 잡아도 충분히 빠릅니다.
-// PSRAM에 할당 (내부 SRAM은 다른 용도로 아껴둠).
-#define LVGL_BUF_HEIGHT (LCD_V_RES / 10)
+// LVGL 드로우 버퍼: 화면 전체가 아니라 일부 높이만 잡아도 충분히 빠릅니다.
+// PSRAM에 할당(8MB 여유 있음). 1/4 높이로 키우면 풀스크린(타일뷰 드래그) 리드로우 시
+// flush 왕복 횟수가 1/10일 때보다 줄어들어 스와이프가 더 매끄러워짐.
+#define LVGL_BUF_HEIGHT (LCD_V_RES / 4)
 
 static esp_lcd_panel_handle_t s_panel_handle = NULL;
 static esp_lcd_touch_handle_t s_touch_handle = NULL;
