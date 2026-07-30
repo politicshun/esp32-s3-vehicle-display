@@ -12,6 +12,11 @@
 
 ## 변경 이력
 - 2026-07-29: sdkconfig.defaults 최신화 완료 (idf.py save-defconfig 기준, 날짜: 2026-07-29)
+- 2026-07-30: 한글 미표시 문제 — `lv_font_montserrat_24/14`가 한글 글리프를 지원하지 않아
+  실기기에서 한글 라벨이 렌더링되지 않던 문제 확인. 맑은고딕 기반 서브셋 폰트(`ui_font_kr_24/14`,
+  `lv_font_conv`로 생성, montserrat를 fallback으로 연결)로 시도했으나 실기기에서 여전히
+  텍스트가 안 보여 원인 미해결 상태로 보류. 사용자 판단으로 UI 텍스트를 전부 영문으로 전환해
+  우회함(실차 클러스터도 영문 표기가 흔함). 자세한 내용은 `docs/design/ui-layout.md` 참고.
 - 2026-07-30: PSRAM(Octal, 8MB, 80MHz) 활성화. 실기기(COM12) 부팅 로그에서
   `Embedded PSRAM 8MB (AP_3v3)` 실측 확인 후 `CONFIG_SPIRAM`/`CONFIG_SPIRAM_MODE_OCT`/
   `CONFIG_SPIRAM_SPEED_80M`을 sdkconfig 및 sdkconfig.defaults에 반영. 이전엔 PSRAM 미설정 상태라

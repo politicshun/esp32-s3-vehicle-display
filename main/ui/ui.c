@@ -15,11 +15,18 @@
  * 각 HARNESS-TODO 블록만 채우면 된다.
  */
 
+/* 속도 아크 게이지 표시 범위 — 실차 최고속도 스펙이 아니라 UI 표시 스케일 값.
+ * 클러스터 UI에서 흔히 쓰는 라운드 값(200km/h)으로 설정, 실차 스펙 확정되면 조정 가능. */
+#define SPEED_GAUGE_MAX_KMH 200
+
 static lv_obj_t *tileview;
+static lv_obj_t *pages[4];
+static lv_obj_t *page_dots[4];
 
 /* Page 1 — 주행 필수 정보 */
+static lv_obj_t *arc_speed;
 static lv_obj_t *lbl_speed;
-static lv_obj_t *lbl_gear_todo;   /* HARNESS-TODO: gear 필드 없음 */
+static lv_obj_t *lbl_gear_todo;   /* HARNESS-TODO: gear 필드 없음 — 배지 모양만 레퍼런스와 맞춤 */
 static lv_obj_t *lbl_odo_todo;    /* HARNESS-TODO: odo 필드 없음 */
 static lv_obj_t *lbl_trip_todo;   /* HARNESS-TODO: trip 필드 없음 */
 
@@ -69,21 +76,55 @@ static lv_obj_t *make_todo_label(lv_obj_t *parent, const char *title)
 static void build_page_drive(lv_obj_t *tv)
 {
     lv_obj_t *page = make_page(tv, 0);
+    pages[0] = page;
 
-    /* HARNESS-TODO: gear(N/D) 필드가 VehicleData_t에 없어 뱃지 대신 안내 라벨만 배치.
-     * 필드 추가되면 make_gear_badge 형태(이전 리비전 참고)로 교체 가능. */
-    lbl_gear_todo = make_todo_label(page, "GEAR");
-    lv_obj_align(lbl_gear_todo, LV_ALIGN_TOP_LEFT, 16, 16);
+    /* 레퍼런스 디자인의 원형 게이지 스피도미터 — speed는 live 데이터, 아크 자체는 표시 전용 */
+    arc_speed = lv_arc_create(page);
+    lv_obj_set_size(arc_speed, 300, 300);
+    lv_arc_set_rotation(arc_speed, 135);
+    lv_arc_set_bg_angles(arc_speed, 0, 270);
+    lv_arc_set_range(arc_speed, 0, SPEED_GAUGE_MAX_KMH);
+    lv_arc_set_value(arc_speed, 0);
+    lv_obj_remove_style(arc_speed, NULL, LV_PART_KNOB); /* 표시 전용, 조작 불가 */
+    lv_obj_clear_flag(arc_speed, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_color(arc_speed, UI_COLOR_CYAN, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(arc_speed, 14, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_width(arc_speed, 14, LV_PART_MAIN);
+    lv_obj_align(arc_speed, LV_ALIGN_CENTER, 0, 0);
 
     lbl_speed = lv_label_create(page);
     lv_obj_add_style(lbl_speed, &ui_style_label_big, 0);
     lv_label_set_text(lbl_speed, "0");
-    lv_obj_align(lbl_speed, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_align_to(lbl_speed, arc_speed, LV_ALIGN_CENTER, 0, -12);
 
     lv_obj_t *unit = lv_label_create(page);
     lv_obj_add_style(unit, &ui_style_label_small, 0);
     lv_label_set_text(unit, "km/h");
     lv_obj_align_to(unit, lbl_speed, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
+
+    /* HARNESS-TODO: gear(N/D) 필드가 VehicleData_t에 없어 값은 지어내지 않고,
+     * 레퍼런스 디자인의 원형 배지 모양만 미리 잡아둔다 (필드 추가되면 텍스트만 교체). */
+    lv_obj_t *gear_badge = lv_obj_create(page);
+    lv_obj_remove_style_all(gear_badge);
+    lv_obj_set_size(gear_badge, 56, 56);
+    lv_obj_set_style_radius(gear_badge, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(gear_badge, 2, 0);
+    lv_obj_set_style_border_color(gear_badge, UI_COLOR_TEXT_SEC, 0);
+    lv_obj_set_style_bg_opa(gear_badge, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(gear_badge, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(gear_badge, LV_ALIGN_TOP_LEFT, 16, 16);
+
+    lbl_gear_todo = lv_label_create(gear_badge);
+    lv_obj_add_style(lbl_gear_todo, &ui_style_label_mid, 0);
+    lv_obj_set_style_text_color(lbl_gear_todo, UI_COLOR_TEXT_SEC, 0);
+    lv_label_set_text(lbl_gear_todo, "--");
+    lv_obj_center(lbl_gear_todo);
+
+    /* "핵심 표시 항목" 표의 "주행 모드(Drive Mode)" — 배지 아래 캡션으로 항목명만 표시 */
+    lv_obj_t *lbl_gear_caption = lv_label_create(page);
+    lv_obj_add_style(lbl_gear_caption, &ui_style_label_small, 0);
+    lv_label_set_text(lbl_gear_caption, "MODE");
+    lv_obj_align_to(lbl_gear_caption, gear_badge, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
 
     lbl_odo_todo = make_todo_label(page, "ODO");
     lv_obj_align(lbl_odo_todo, LV_ALIGN_BOTTOM_LEFT, 16, -16);
@@ -98,6 +139,7 @@ static void build_page_drive(lv_obj_t *tv)
 static void build_page_battery(lv_obj_t *tv)
 {
     lv_obj_t *page = make_page(tv, 1);
+    pages[1] = page;
 
     arc_soc = lv_arc_create(page);
     lv_obj_set_size(arc_soc, 220, 220);
@@ -126,7 +168,8 @@ static void build_page_battery(lv_obj_t *tv)
     lbl_range_todo = make_todo_label(page, "Range");
     lv_obj_align(lbl_range_todo, LV_ALIGN_BOTTOM_LEFT, 16, -16);
 
-    lbl_output_todo = make_todo_label(page, "Output");
+    /* "핵심 표시 항목" 표의 "실시간 출력 / 회생제동" 항목 */
+    lbl_output_todo = make_todo_label(page, "Power/Regen");
     lv_obj_align(lbl_output_todo, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
 }
 
@@ -136,6 +179,7 @@ static void build_page_battery(lv_obj_t *tv)
 static void build_page_diag(lv_obj_t *tv)
 {
     lv_obj_t *page = make_page(tv, 2);
+    pages[2] = page;
 
     banner_dtc = lv_obj_create(page);
     lv_obj_remove_style_all(banner_dtc);
@@ -149,7 +193,7 @@ static void build_page_diag(lv_obj_t *tv)
     lv_obj_add_style(lbl_dtc_code, &ui_style_label_mid, 0);
     /* dtc_code CAN ID(0x301)는 docs/design/can-signals.md 기준 실차 DBC 미대조
      * placeholder다 — UI는 raw 값만 그대로 보여준다(의미 해석 시도 안 함). */
-    lv_label_set_text(lbl_dtc_code, "DTC: 정상");
+    lv_label_set_text(lbl_dtc_code, "DTC: OK");
     lv_obj_center(lbl_dtc_code);
 
     lv_obj_t *lbl_volt2 = lv_label_create(page);
@@ -161,8 +205,8 @@ static void build_page_diag(lv_obj_t *tv)
      * (아래 static 전역에 등록) */
     lbl_pack_volt2 = lbl_volt2;
 
-    /* HARNESS-TODO: pack_temp 필드 없음 */
-    lbl_pack_temp_todo = make_todo_label(page, "Pack Temp");
+    /* HARNESS-TODO: 온도 센서 필드 없음 — "핵심 표시 항목" 표의 "시스템 온도 경고" 항목 */
+    lbl_pack_temp_todo = make_todo_label(page, "Sys Temp");
     lv_obj_align_to(lbl_pack_temp_todo, lbl_volt2, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 16);
 }
 
@@ -183,13 +227,14 @@ static lv_obj_t *make_status_dot(lv_obj_t *parent)
 static void build_page_connect(lv_obj_t *tv)
 {
     lv_obj_t *page = make_page(tv, 3);
+    pages[3] = page;
 
     dot_ble = make_status_dot(page);
     lv_obj_align(dot_ble, LV_ALIGN_TOP_LEFT, 16, 24);
 
     lbl_ble_status = lv_label_create(page);
     lv_obj_add_style(lbl_ble_status, &ui_style_label_mid, 0);
-    lv_label_set_text(lbl_ble_status, "BLE 연결 안됨");
+    lv_label_set_text(lbl_ble_status, "BLE Disconnected");
     lv_obj_align_to(lbl_ble_status, dot_ble, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
 
     dot_vehicle = make_status_dot(page);
@@ -197,14 +242,14 @@ static void build_page_connect(lv_obj_t *tv)
 
     lv_obj_t *lbl_vehicle = lv_label_create(page);
     lv_obj_add_style(lbl_vehicle, &ui_style_label_mid, 0);
-    lv_label_set_text(lbl_vehicle, "차량 상태 정상");
+    lv_label_set_text(lbl_vehicle, "Vehicle Status: OK");
     lv_obj_align_to(lbl_vehicle, dot_vehicle, LV_ALIGN_OUT_RIGHT_MID, 12, 0);
 
     /* HARNESS-TODO: 시계/외기온도 — RTC/온도센서 소스 미확정, 소스 확정 전 stub 유지 */
-    lv_obj_t *lbl_clock = make_todo_label(page, "시각");
+    lv_obj_t *lbl_clock = make_todo_label(page, "Time");
     lv_obj_align(lbl_clock, LV_ALIGN_BOTTOM_LEFT, 16, -16);
 
-    lv_obj_t *lbl_outtemp = make_todo_label(page, "외기");
+    lv_obj_t *lbl_outtemp = make_todo_label(page, "Out Temp");
     lv_obj_align(lbl_outtemp, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
 }
 
@@ -226,11 +271,22 @@ static void build_page_indicator(lv_obj_t *parent)
         lv_obj_remove_style_all(dot);
         lv_obj_set_size(dot, 8, 8);
         lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(dot, UI_COLOR_TEXT_SEC, 0);
+        lv_obj_set_style_bg_color(dot, i == 0 ? UI_COLOR_CYAN : UI_COLOR_TEXT_SEC, 0);
         lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+        page_dots[i] = dot;
     }
-    /* HARNESS-TODO: 페이지 전환 시 활성 dot 하이라이트 미구현
-     * (tileview LV_EVENT_VALUE_CHANGED 콜백에서 처리 가능) */
+}
+
+/* 페이지 전환 시 현재 타일에 대응하는 인디케이터 dot만 CYAN으로 하이라이트 */
+static void tileview_event_cb(lv_event_t *e)
+{
+    lv_obj_t *tv = lv_event_get_target(e);
+    lv_obj_t *act = lv_tileview_get_tile_act(tv);
+
+    for (int i = 0; i < 4; i++) {
+        lv_obj_set_style_bg_color(page_dots[i],
+            pages[i] == act ? UI_COLOR_CYAN : UI_COLOR_TEXT_SEC, 0);
+    }
 }
 
 /* ---------------------------------------------------------------------
@@ -252,6 +308,8 @@ void ui_init(lv_obj_t *parent)
     build_page_connect(tileview);
 
     build_page_indicator(parent);
+
+    lv_obj_add_event_cb(tileview, tileview_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 void ui_update(void)
@@ -262,6 +320,7 @@ void ui_update(void)
     char buf[32];
 
     /* Page 1 */
+    lv_arc_set_value(arc_speed, d.speed);
     snprintf(buf, sizeof(buf), "%u", (unsigned)d.speed);
     lv_label_set_text(lbl_speed, buf);
 
@@ -278,7 +337,7 @@ void ui_update(void)
 
     /* Page 3 */
     if (d.dtc_code == 0) {
-        lv_label_set_text(lbl_dtc_code, "DTC: 정상");
+        lv_label_set_text(lbl_dtc_code, "DTC: OK");
         lv_obj_set_style_bg_color(banner_dtc, UI_COLOR_TEXT_SEC, 0);
         lv_obj_set_style_bg_opa(banner_dtc, LV_OPA_20, 0);
     } else {
@@ -293,7 +352,7 @@ void ui_update(void)
 
     /* Page 4 */
     lv_obj_set_style_bg_color(dot_ble, d.ble_connected ? UI_COLOR_GREEN : UI_COLOR_TEXT_SEC, 0);
-    lv_label_set_text(lbl_ble_status, d.ble_connected ? "BLE 연결됨" : "BLE 연결 안됨");
+    lv_label_set_text(lbl_ble_status, d.ble_connected ? "BLE Connected" : "BLE Disconnected");
 
     lv_obj_set_style_bg_color(dot_vehicle, d.dtc_code == 0 ? UI_COLOR_GREEN : UI_COLOR_RED, 0);
 }
