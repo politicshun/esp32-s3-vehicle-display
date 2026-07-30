@@ -8,6 +8,7 @@ extern void bsp_hardware_init(void);
 extern void twai_rx_task(void *pvParameters);
 extern void ble_sync_task(void *pvParameters);
 extern void lvgl_ui_task(void *pvParameters);
+extern void dummy_data_sim_task(void *pvParameters); // TEMPORARY: main/dummy_data_sim.c 참고
 
 static const char *TAG = "MAIN";
 
@@ -22,6 +23,9 @@ void app_main(void) {
     // CORE 0 : CAN & BLE
     xTaskCreatePinnedToCore(twai_rx_task,  "twai_rx",  4096, NULL, 10, NULL, 0);
     xTaskCreatePinnedToCore(ble_sync_task, "ble_sync", 4096, NULL,  5, NULL, 0);
+
+    // TEMPORARY: CAN 없이 UI 반응성 확인용 더미 데이터. 실차 연결 시 이 줄 삭제.
+    xTaskCreatePinnedToCore(dummy_data_sim_task, "dummy_sim", 2048, NULL, 5, NULL, 0);
 
     // CORE 1 : LVGL
     xTaskCreatePinnedToCore(lvgl_ui_task,  "lvgl_ui",  8192, NULL,  5, NULL, 1);
