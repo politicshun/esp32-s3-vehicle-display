@@ -5,7 +5,6 @@ idf_component_register(
         "vehicle_data.c"
         "twai.c"
         "ble.c"
-        "dummy_data_sim.c"
         "lvgl.c"
         "ui/ui.c"
         "ui/ui_style.c"

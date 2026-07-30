@@ -39,6 +39,12 @@ static bool twai_start_with_retry(void) {
 }
 
 static void handle_rx_message(const twai_message_t *rx_msg) {
+    // HARNESS-TODO: KVASER 벤치 테스트용 임시 raw 로그. 실차 연결 전 삭제할 것.
+    ESP_LOGI(TAG, "RX id=0x%03lX dlc=%d data=%02X %02X %02X %02X %02X %02X %02X %02X",
+             rx_msg->identifier, rx_msg->data_length_code,
+             rx_msg->data[0], rx_msg->data[1], rx_msg->data[2], rx_msg->data[3],
+             rx_msg->data[4], rx_msg->data[5], rx_msg->data[6], rx_msg->data[7]);
+
     VehicleData_t current_data;
     vehicle_data_get(&current_data);
 
