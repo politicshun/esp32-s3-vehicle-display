@@ -12,6 +12,10 @@
 
 ## 변경 이력
 - 2026-07-29: sdkconfig.defaults 최신화 완료 (idf.py save-defconfig 기준, 날짜: 2026-07-29)
+- 2026-07-30: PSRAM(Octal, 8MB, 80MHz) 활성화. 실기기(COM12) 부팅 로그에서
+  `Embedded PSRAM 8MB (AP_3v3)` 실측 확인 후 `CONFIG_SPIRAM`/`CONFIG_SPIRAM_MODE_OCT`/
+  `CONFIG_SPIRAM_SPEED_80M`을 sdkconfig 및 sdkconfig.defaults에 반영. 이전엔 PSRAM 미설정 상태라
+  `esp_lcd_new_rgb_panel()`의 `fb_in_psram=true`가 "no mem for frame buffer"로 실패했음.
 
 ## API 사용 전 확인 규칙
 - `esp_lcd_*` 관련 구조체를 쓸 때는 위 ESP-IDF 버전에 해당하는 헤더를
