@@ -48,13 +48,26 @@ static lv_obj_t *lbl_gear;        /* drive_mode 바인딩 (placeholder, CAN 0x30
 static lv_obj_t *lbl_odo;         /* odo_km 바인딩 (placeholder, CAN 0x303) */
 static lv_obj_t *lbl_trip_todo;   /* HARNESS-TODO: trip 필드 없음 (범위 밖) */
 
-/* Page 2 — 전력 및 배터리 */
+/* Page 2 — 전력 및 배터리
+ * 2026-07-31: Power/Regen을 텍스트 2줄 카드로 넣었더니 UI_CARD_H(78px)에 못 들어가고
+ * 잘려서(사용자 확인), 카드 대신 SOC와 대칭인 Power 게이지를 왼쪽에 추가하는 구조로 교체.
+ * 2026-07-31(2차): 게이지 2개가 좌우 구석에 몰려 답답해 보인다는 피드백 + Regen을
+ * 텍스트 대신 "배터리 차듯이" 채워지는 막대로 보여달라는 요청 반영 — 여백을 넓히고
+ * (24px->36px), Regen을 lv_bar(배터리st 충전 표시처럼 초록 막대가 채워지는 방식)로 교체. */
+#define UI_POWER_GAUGE_MAX_KW 100  /* 실차 스펙 아님 — UI 표시 스케일 값 (레드존 없음, 과열 아니라 정상 출력 영역) */
+#define UI_REGEN_BAR_MAX_KW 50     /* 실차 스펙 아님 — UI 표시 스케일 값, 감속 시 회생 피크가 대략 이 정도라고 가정(can_sim_kvaser.py 기준) */
+static lv_obj_t *meter_power;
+static lv_meter_indicator_t *power_value_indic;
+static lv_obj_t *lbl_power_kw;
+static lv_obj_t *lbl_power_unit;      /* "kW" 고정 텍스트 — Regen 위젯들 정렬 기준점으로 ui_update()에서도 참조 */
+static lv_obj_t *lbl_regen_caption;   /* "REGEN" 고정 캡션 — lbl_regen_kw 재정렬 기준점 */
+static lv_obj_t *lbl_regen_kw;
+static lv_obj_t *bar_regen;           /* regen_kw를 배터리 충전 막대처럼 표시 */
 static lv_obj_t *meter_soc;
 static lv_meter_indicator_t *soc_value_indic;
 static lv_obj_t *lbl_soc_pct;
 static lv_obj_t *lbl_pack_volt;
 static lv_obj_t *lbl_range;        /* range_km 바인딩 (placeholder, CAN 0x304) */
-static lv_obj_t *lbl_power_regen;  /* power_kw/regen_kw 바인딩 (placeholder, CAN 0x305/0x306) */
 
 /* Page 3 — 시스템 상태 및 진단 */
 static lv_obj_t *banner_dtc;
@@ -255,14 +268,72 @@ static void build_page_battery(lv_obj_t *tv)
     lv_obj_t *page = make_page(tv, 1);
     pages[1] = page;
 
-    /* 게이지 뒤에 까는 정적 글로우 배경 (speed 페이지와 동일한 방식) */
-    lv_obj_t *glow_soc = make_glow_bg(page, &ui_glow_soc, 240);
-    lv_obj_align(glow_soc, LV_ALIGN_TOP_MID, 0, 8);
+    /* 2026-07-31(3차): (1) Regen 캡션/막대가 게이지 중간 높이(lbl_power_unit) 기준으로
+     * 붙어있어서 게이지 하단부(눈금/숫자)와 겹치는 문제 — meter_power "전체 박스" 하단
+     * 기준으로 앵커를 바꿈. (2) 게이지 2개가 양끝+맨위에 몰려 답답해 보인다는 피드백 —
+     * 크기를 줄이고(220->200) 여백을 키워서(가로 36->50, 위 8->24) 더 안정적으로 배치. */
+#define UI_BATTERY_GAUGE_SIZE 200
+#define UI_BATTERY_GAUGE_MARGIN_X 50
+#define UI_BATTERY_GAUGE_MARGIN_Y 24
+
+    /* 게이지 2개(왼쪽 Power, 오른쪽 SOC) 뒤에 까는 정적 글로우 배경 — ui_glow_soc은 신호별
+     * 콘텐츠가 있는 이미지가 아니라 범용 방사형 글로우라(scripts/gen_glow_image.py) 두 곳에
+     * 재사용해도 무방함 (새 이미지 에셋 안 만듦) */
+    lv_obj_t *glow_power = make_glow_bg(page, &ui_glow_soc, UI_BATTERY_GAUGE_SIZE);
+    lv_obj_align(glow_power, LV_ALIGN_TOP_LEFT, UI_BATTERY_GAUGE_MARGIN_X, UI_BATTERY_GAUGE_MARGIN_Y);
+    lv_obj_t *glow_soc = make_glow_bg(page, &ui_glow_soc, UI_BATTERY_GAUGE_SIZE);
+    lv_obj_align(glow_soc, LV_ALIGN_TOP_RIGHT, -UI_BATTERY_GAUGE_MARGIN_X, UI_BATTERY_GAUGE_MARGIN_Y);
+
+    /* Power 게이지: 0~100kW 표시 스케일(UI_POWER_GAUGE_MAX_KW, 실차 스펙 아님), 레드존 없음 */
+    meter_power = make_gauge_meter(page, UI_BATTERY_GAUGE_SIZE, 0, UI_POWER_GAUGE_MAX_KW, 11, 2, 0, 0,
+                                    true, &power_value_indic, NULL);
+    lv_obj_align(meter_power, LV_ALIGN_TOP_LEFT, UI_BATTERY_GAUGE_MARGIN_X, UI_BATTERY_GAUGE_MARGIN_Y);
+    lv_obj_set_style_bg_opa(meter_power, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    lbl_power_kw = lv_label_create(page);
+    lv_obj_add_style(lbl_power_kw, &ui_style_label_big, 0);
+    lv_label_set_text(lbl_power_kw, "0");
+    lv_obj_align_to(lbl_power_kw, meter_power, LV_ALIGN_CENTER, 0, -14);
+
+    lbl_power_unit = lv_label_create(page);
+    lv_obj_add_style(lbl_power_unit, &ui_style_label_small, 0);
+    lv_label_set_text(lbl_power_unit, "kW");
+    lv_obj_align_to(lbl_power_unit, lbl_power_kw, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
+
+    /* Regen: 텍스트 대신 배터리 충전 막대처럼 보이는 lv_bar로 표시(사용자 확인) — 캡션/막대
+     * 둘 다 meter_power "게이지 전체 박스"의 아래쪽에 앵커해서, 게이지 안쪽 눈금/숫자와
+     * 안 겹치게 확실히 떨어뜨린다(내부 라벨 기준으로 앵커하면 게이지 중간 높이라 겹쳤었음). */
+    lbl_regen_caption = lv_label_create(page);
+    lv_obj_add_style(lbl_regen_caption, &ui_style_label_small, 0);
+    lv_obj_set_style_text_color(lbl_regen_caption, UI_COLOR_TEXT_SEC, 0);
+    lv_label_set_text(lbl_regen_caption, "REGEN");
+    lv_obj_align_to(lbl_regen_caption, meter_power, LV_ALIGN_OUT_BOTTOM_MID, -34, 16);
+
+    lbl_regen_kw = lv_label_create(page);
+    lv_obj_add_style(lbl_regen_kw, &ui_style_label_small, 0);
+    lv_obj_set_style_text_color(lbl_regen_kw, UI_COLOR_GREEN, 0);
+    lv_label_set_text(lbl_regen_kw, "0 kW");
+    lv_obj_align_to(lbl_regen_kw, lbl_regen_caption, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
+
+    bar_regen = lv_bar_create(page);
+    lv_obj_set_size(bar_regen, 160, 14);
+    lv_bar_set_range(bar_regen, 0, UI_REGEN_BAR_MAX_KW);
+    lv_bar_set_value(bar_regen, 0, LV_ANIM_OFF);
+    lv_obj_set_style_radius(bar_regen, 7, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(bar_regen, UI_COLOR_TEXT_SEC, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(bar_regen, LV_OPA_20, LV_PART_MAIN);
+    lv_obj_set_style_border_width(bar_regen, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(bar_regen, UI_COLOR_TEXT_SEC, LV_PART_MAIN);
+    lv_obj_set_style_border_opa(bar_regen, LV_OPA_40, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar_regen, 7, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(bar_regen, UI_COLOR_GREEN, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(bar_regen, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_align_to(bar_regen, meter_power, LV_ALIGN_OUT_BOTTOM_MID, 0, 40);
 
     /* SOC 게이지: 0~100%, 10단위 눈금/20단위 숫자, 0~20 레드존(저잔량 경고, UI_SOC_LOW_PCT와 동일 기준) */
-    meter_soc = make_gauge_meter(page, 240, 0, 100, 11, 2, 0, UI_SOC_LOW_PCT,
+    meter_soc = make_gauge_meter(page, UI_BATTERY_GAUGE_SIZE, 0, 100, 11, 2, 0, UI_SOC_LOW_PCT,
                                   true, &soc_value_indic, NULL);
-    lv_obj_align(meter_soc, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_align(meter_soc, LV_ALIGN_TOP_RIGHT, -UI_BATTERY_GAUGE_MARGIN_X, UI_BATTERY_GAUGE_MARGIN_Y);
     lv_obj_set_style_bg_opa(meter_soc, LV_OPA_TRANSP, LV_PART_MAIN);
 
     lbl_soc_pct = lv_label_create(page);
@@ -270,17 +341,14 @@ static void build_page_battery(lv_obj_t *tv)
     lv_label_set_text(lbl_soc_pct, "0%");
     lv_obj_align_to(lbl_soc_pct, meter_soc, LV_ALIGN_CENTER, 0, 0);
 
+    /* Pack Voltage / Range — 게이지 2개가 위쪽을 다 차지해서 하단 좌우 카드로 재배치 */
     lv_obj_t *volt_card = make_info_card(page, "Pack Voltage", &lbl_pack_volt);
     lv_label_set_text(lbl_pack_volt, "-- V");
-    lv_obj_align_to(volt_card, meter_soc, LV_ALIGN_OUT_BOTTOM_MID, 0, 14);
+    lv_obj_align(volt_card, LV_ALIGN_BOTTOM_LEFT, 16, -16);
 
     /* range_km(placeholder, CAN 0x304) */
     lv_obj_t *range_card = make_info_card(page, "Range", &lbl_range);
-    lv_obj_align(range_card, LV_ALIGN_BOTTOM_LEFT, 16, -16);
-
-    /* power_kw/regen_kw(placeholder, CAN 0x305/0x306) — 카드 하나에 두 줄로 표시 */
-    lv_obj_t *power_card = make_info_card(page, "Power/Regen", &lbl_power_regen);
-    lv_obj_align(power_card, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
+    lv_obj_align(range_card, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
 }
 
 /* ---------------------------------------------------------------------
@@ -480,9 +548,12 @@ static void tileview_event_cb(lv_event_t *e)
  * 800x480 화면을 좌/우 반반으로 나눈 투명 클릭존을 tileview 위에 얹어서, 사용자
  * 입력이 tileview의 드래그 스크롤 로직까지 아예 안 내려가게 막는다(오브젝트 트리상
  * 나중에 추가된 쪽이 위에서 터치를 가로챔) — tileview 자체의 SCROLLABLE은 그대로
- * 둬서 lv_obj_set_tile_id()의 내부 애니메이션 스크롤(및 그걸 따라오는 dot 갱신용
+ * 둬서 lv_obj_set_tile_id()의 내부 스크롤(및 그걸 따라오는 dot 갱신용
  * LV_EVENT_VALUE_CHANGED)은 그대로 동작한다.
- * ------------------------------------------------------------------- */
+ * 2026-07-31(2차): 슬라이드 애니메이션도 필요 없다는 피드백으로 LV_ANIM_ON->OFF로
+ * 변경 — 탭하면 바로 전환됨. LV_ANIM_OFF도 내부적으로 LV_EVENT_SCROLL_END를 동기적으로
+ * 보내므로(lv_obj_scroll_by, lv_obj_scroll.c) dot 갱신 로직은 애니메이션 유무와 무관하게
+ * 그대로 작동한다(직접 소스 확인함). */
 static void go_to_page(int delta)
 {
     lv_obj_t *act = lv_tileview_get_tile_act(tileview);
@@ -499,7 +570,7 @@ static void go_to_page(int delta)
     if (target > 3) target = 3;
 
     if (target != cur) {
-        lv_obj_set_tile_id(tileview, target, 0, LV_ANIM_ON);
+        lv_obj_set_tile_id(tileview, target, 0, LV_ANIM_OFF);
     }
 }
 
@@ -631,6 +702,37 @@ static void animate_soc_to(int32_t target)
     current = target;
 }
 
+static void anim_power_exec_cb(void *var, int32_t v)
+{
+    (void)var;
+    /* power_kw 실제 범위는 [0|255]지만 게이지 표시 스케일은 UI_POWER_GAUGE_MAX_KW(100) —
+     * speed 게이지와 같은 패턴으로, 라벨 숫자는 실제값 그대로 찍되 게이지 아크만 clamp */
+    int32_t gauge_v = v > UI_POWER_GAUGE_MAX_KW ? UI_POWER_GAUGE_MAX_KW : (v < 0 ? 0 : v);
+    lv_meter_set_indicator_end_value(meter_power, power_value_indic, gauge_v);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d", (int)v);
+    lv_label_set_text(lbl_power_kw, buf);
+    lv_obj_align_to(lbl_power_kw, meter_power, LV_ALIGN_CENTER, 0, -14);
+}
+
+static void animate_power_to(int32_t target)
+{
+    static int32_t last_target = -1;
+    static int32_t current = 0;
+    if (target == last_target) return;
+    last_target = target;
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, meter_power);
+    lv_anim_set_exec_cb(&a, anim_power_exec_cb);
+    lv_anim_set_values(&a, current, target);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+    current = target;
+}
+
 void ui_update(void)
 {
     VehicleData_t d;
@@ -657,8 +759,13 @@ void ui_update(void)
     snprintf(buf, sizeof(buf), "%u km", (unsigned)d.range_km);
     lv_label_set_text(lbl_range, buf);
 
-    snprintf(buf, sizeof(buf), "%.1f kW\nRegen %.1f kW", d.power_kw, d.regen_kw);
-    lv_label_set_text(lbl_power_regen, buf);
+    animate_power_to((int32_t)d.power_kw);
+    lv_bar_set_value(bar_regen, (int32_t)d.regen_kw, LV_ANIM_ON);
+    snprintf(buf, sizeof(buf), "%d kW", (int)d.regen_kw);
+    lv_label_set_text(lbl_regen_kw, buf);
+    /* speed/soc와 같은 이유로 자릿수 변화 시 재정렬 필요 (align_to는 최초 호출 시점 폭 기준) —
+     * build_page_battery()에서 잡은 것과 동일한 기준(lbl_regen_caption 오른쪽)으로 다시 정렬 */
+    lv_obj_align_to(lbl_regen_kw, lbl_regen_caption, LV_ALIGN_OUT_RIGHT_MID, 8, 0);
 
     /* Page 3 */
     if (d.dtc_code == 0) {

@@ -122,13 +122,22 @@ CPU1이 `draw_shadow`에 계속 묶여 idle을 못 돌았음 (백트레이스로
 
 ## Page 2 — Battery (`build_page_battery`)
 
-- SOC(live): 240px `lv_meter` 게이지(0~100%, 20단위 눈금 숫자, 0~20% 레드존), 20% 이하 시
-  값 아크 RED 전환
-- Pack Voltage(live, `%.1f V`) — 카드로 표시, 게이지 바로 아래 중앙 (InvMsg2 byte1, 정수 V 해상도)
-- Range(live): `range_km` 값 표시 (InvMsg2 byte3, [0\|255]km) — 카드(좌하단)
-- Power/Regen(live): `power_kw`/`regen_kw` 두 값을 카드 한 개에 2줄로 표시
-  (InvMsg1 byte3/byte4, 정수 kW 해상도 — 2026-07-31 우선도 재배치로 InvMsg1로 이동,
-  운전 중 계속 바뀌는 값이라 빠른 주기가 맞다고 판단) — 카드(우하단)
+2026-07-31 재구성: Power/Regen을 `make_info_card` 텍스트 카드(2줄)로 넣었더니
+`UI_CARD_H`(78px)에 못 들어가고 글자가 잘리는 문제가 있어(사용자 확인), SOC와 대칭인
+Power 게이지를 왼쪽에 추가하는 구조로 교체 — 상단 좌우에 게이지 2개(왼쪽 Power/오른쪽
+SOC), 하단 좌우에 카드 2개(Pack Voltage/Range)로 재배치.
+
+- Power(live): 220px `lv_meter` 게이지(0~`UI_POWER_GAUGE_MAX_KW`=100kW 표시 스케일,
+  실차 스펙 아님, 레드존 없음) — 좌상단(여백 36px). 큰 숫자 라벨은 실제값 그대로
+  표시하되(speed와 같은 패턴), 게이지 아크만 100kW에서 clamp.
+- Regen(live, `regen_kw`, InvMsg1 byte4): Power 게이지 아래 "REGEN" 캡션 + 값 라벨(초록,
+  실제값 그대로) 한 줄 + `lv_bar` 막대(배터리 충전처럼 초록색이 채워지는 형태,
+  `UI_REGEN_BAR_MAX_KW`=50kW 표시 스케일에서 clamp — 처음엔 텍스트 2줄로 넣었다가
+  카드에 잘리는 문제 + 여백이 답답하다는 피드백으로 2026-07-31 재수정됨)
+- SOC(live): 220px `lv_meter` 게이지(0~100%, 20단위 눈금 숫자, 0~20% 레드존), 20% 이하 시
+  값 아크 RED 전환 — 우상단 (Power 게이지와 좌우 대칭)
+- Pack Voltage(live, `%.1f V`) — 카드로 표시 (InvMsg2 byte1, 정수 V 해상도) — 카드(좌하단)
+- Range(live): `range_km` 값 표시 (InvMsg2 byte3, [0\|255]km) — 카드(우하단)
 
 ## Page 3 — Diagnostics (`build_page_diag`)
 
@@ -176,9 +185,14 @@ UI 바인딩/디코딩 코드는 이미 끝난 상태.
 - ~~드래그 스와이프 페이지 전환~~ — 2026-07-31, **탭 방식으로 교체**: 실기기에서 드래그가
   상용화하기엔 프레임이 너무 끊겨서(사용자 확인), 화면을 좌/우 절반으로 나눈 투명 클릭존
   (`build_tap_zones`, `main/ui/ui.c`)을 tileview 위에 얹어 탭으로만 페이지 전환. tileview
-  자체의 SCROLLABLE 플래그는 그대로 둬서 `lv_obj_set_tile_id()`의 내부 애니메이션 스크롤과
+  자체의 SCROLLABLE 플래그는 그대로 둬서 `lv_obj_set_tile_id()`의 내부 스크롤과
   dot 갱신(`LV_EVENT_VALUE_CHANGED`)은 그대로 작동 — 사용자 입력만 클릭존이 가로채서
   tileview까지 안 내려가게 함. 첫/마지막 페이지에서 더 밀면 그냥 안 움직임(래핑 없음).
+  **2026-07-31(2차)**: 슬라이드 전환 애니메이션도 불필요하다는 피드백으로
+  `go_to_page()`의 `lv_obj_set_tile_id()` 호출을 `LV_ANIM_ON`→`LV_ANIM_OFF`로 변경 —
+  탭하면 즉시 전환됨. `LV_ANIM_OFF`도 LVGL 내부적으로 `LV_EVENT_SCROLL_END`를 동기
+  전송하므로(`lv_obj_scroll_by`, lvgl `core/lv_obj_scroll.c`) dot 하이라이트 갱신 로직은
+  애니메이션 유무와 무관하게 그대로 작동함(소스 확인).
 - ~~페이지 인디케이터 dot의 현재 페이지 하이라이트~~ — 구현 완료 (2026-07-30,
   `tileview_event_cb` + `LV_EVENT_VALUE_CHANGED`)
 - ~~speed를 아크 게이지로 표시~~ — 구현 완료 (2026-07-30, `arc_speed`)
