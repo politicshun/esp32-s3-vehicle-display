@@ -66,14 +66,16 @@ BO_ 775 MSG_SYS_TEMP: 8 ECU
  SG_ SysTemp : 0|8@1- (1,0) [-128|127] "degC" CLUSTER
 
 CM_ "HARNESS-TODO: 이 파일 전체는 실차/BMS DBC와 대조되지 않은 상태다.
-MSG_SPEED(0x100)/MSG_SOC(0x200)는 can-signals.md 기준 '실차 매뉴얼 대조 완료'로
-기록되어 있으나 그 근거 문서 원본은 이 저장소/개발 PC 어디에도 없어 재검증 불가.
+2026-07-31 정정: MSG_SPEED(0x100)/MSG_SOC(0x200)를 포함해 이 파일의 모든 메시지가
+실차 미대조 임시 선언(초기 테스트용 임의 할당 ID)이다. 이전에 0x100/0x200을
+'실차 매뉴얼 대조 완료'로 기록했던 것은 근거 문서가 저장소/개발 PC 어디에도 없어
+재검증 불가능한 상태였고, 사용자 확인 결과 실제로는 테스트용 임의 할당이었다.
 MSG_PACK_VOLT(0x300)/MSG_DTC(0x301)/MSG_DRIVE_MODE(0x302)/MSG_ODOMETER(0x303)/
-MSG_RANGE(0x304)/MSG_POWER(0x305)/MSG_REGEN(0x306)/MSG_SYS_TEMP(0x307)는
+MSG_RANGE(0x304)/MSG_POWER(0x305)/MSG_REGEN(0x306)/MSG_SYS_TEMP(0x307)도 마찬가지로
 전부 placeholder다 (ID, 바이트 위치, 스케일, 부호 전부 미확정 가정).
 실차 DBC나 역추적 로그로 확정되면 이 파일과 main/twai.c를 함께 갱신할 것.";
-CM_ BO_ 256 "확정 (실차 매뉴얼 대조 완료 — 단, 근거 문서 위치 불명. main/twai.c 참고)";
-CM_ BO_ 512 "확정 (실차 매뉴얼 대조 완료 — 단, 근거 문서 위치 불명. main/twai.c 참고)";
+CM_ BO_ 256 "HARNESS-TODO: 확인필요 — 초기 테스트용 임의 할당, 실차 미대조 (2026-07-31 재분류)";
+CM_ BO_ 512 "HARNESS-TODO: 확인필요 — 초기 테스트용 임의 할당, 실차 미대조 (2026-07-31 재분류)";
 CM_ BO_ 768 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0.1V 단위/LE 가정.";
 CM_ BO_ 769 "HARNESS-TODO: placeholder, 실차 DBC 미대조. raw hex 그대로 노출, 의미 해석 안 함.";
 CM_ BO_ 770 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0=P,1=R,2=N,3=D 가정.";

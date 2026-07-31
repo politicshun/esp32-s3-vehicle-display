@@ -14,3 +14,7 @@ Thumbs.db
 
 # Claude Code 로컬 전용 설정 (개인별 권한 오버라이드, 공유 대상 아님)
 .claude/settings.local.json
+
+# CAN 정리표 초안(xlsx) — 사용자 확인: 깃허브에 릴리즈할 필요 없음, 로컬 작업본으로만 유지 (2026-07-31)
+docs/hardware/CLUSTER_CAN_Protocol_*.xlsx
+docs/hardware/~$*.xlsx

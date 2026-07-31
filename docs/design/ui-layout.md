@@ -140,17 +140,24 @@ CPU1이 `draw_shadow`에 계속 묶여 idle을 못 돌았음 (백트레이스로
   빈 공간을 의미 있게 채우기 위해 추가
 - Time/Out Temp: **HARNESS-TODO** (RTC/온도센서 소스 미확정) — 카드(좌하단/우하단)
 
-## "핵심 표시 항목" 표 커버리지 (2026-07-30, CANdb++ 도입 이후 갱신)
+## "핵심 표시 항목" 표 커버리지 (2026-07-31 갱신 — CAN ID 전수 재분류 반영)
 
-사용자 제공 가이드 이미지의 항목 전부가 (확정 live / placeholder-live / HARNESS-TODO
-placeholder 중 하나로) 화면에 노출되도록 반영 완료:
-- **확정 live 2개**: Speed(0x100), SOC(0x200) — 근거 문서 위치는 불명하나 기존에 "확정"으로 기록됨
-- **placeholder-live 8개**: Pack Voltage(0x300)/DTC(0x301)/Drive Mode(0x302)/ODO(0x303)/
-  Range(0x304)/Power(0x305)/Regen(0x306)/Sys Temp(0x307) — `docs/hardware/vehicle.dbc` 기준
-  CAN ID·스케일 전부 가정, 화면 바인딩은 완료했지만 값 자체는 신뢰 금지
-- **HARNESS-TODO 3개**: TRIP/Time/Out Temp — `VehicleData_t`에 필드 자체가 없어 여전히 정적 `--`
+> **2026-07-31 정정**: Speed(0x100)/SOC(0x200)를 "확정 live"로 분류했던 이전 버전은 근거가
+> 없었다(근거 문서 위치 불명 = 검증 불가와 동일). 사용자 확인 결과 초기 테스트용 임의 할당
+> ID였음 — 아래 10개 CAN 신호는 전부 placeholder-live로 재분류한다. 실차 DBC와 대조된 신호는
+> 현재 **0개**.
 
-placeholder-live 8개는 실차 DBC 확정 또는 KVASER 실차 역추적 로그로 값이 확인되는 대로
+사용자 제공 가이드 이미지의 항목 전부가 (placeholder-live / HARNESS-TODO placeholder 중
+하나로) 화면에 노출되도록 반영 완료:
+- **placeholder-live 10개**: Speed(0x100)/SOC(0x200)/Pack Voltage(0x300)/DTC(0x301)/
+  Drive Mode(0x302)/ODO(0x303)/Range(0x304)/Power(0x305)/Regen(0x306)/Sys Temp(0x307) —
+  `docs/hardware/vehicle.dbc` 기준 CAN ID·스케일 전부 가정(초기 테스트용 임의 할당 포함),
+  화면 바인딩은 완료했지만 값 자체는 신뢰 금지
+- **HARNESS-TODO 3개**: TRIP/Time/Out Temp — `VehicleData_t`에 필드 자체가 없어 여전히 정적
+  `--` (Sys Temp와 혼동 주의: Sys Temp는 Page 3의 `sys_temp_c`, CAN 0x307 placeholder로
+  이미 바인딩되어 있고, Out Temp는 Page 4의 별개 항목으로 CAN 신호 자체가 없음)
+
+placeholder-live 10개는 실차 DBC 확정 또는 KVASER 실차 역추적 로그로 값이 확인되는 대로
 `vehicle.dbc` + `twai.c`의 ID/스케일만 갱신하면 되고, UI 바인딩은 이미 끝난 상태.
 
 ## 알려진 미구현 (다음 세션 후보)
