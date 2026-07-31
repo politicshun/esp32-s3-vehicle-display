@@ -1,0 +1,86 @@
+VERSION ""
+
+
+NS_ :
+	NS_DESC_
+	CM_
+	BA_DEF_
+	BA_
+	VAL_
+	CAT_DEF_
+	CAT_
+	FILTER
+	BA_DEF_DEF_
+	EV_DATA_
+	ENVVAR_DATA_
+	SGTYPE_
+	SGTYPE_VAL_
+	BA_DEF_SGTYPE_
+	BA_SGTYPE_
+	SIG_TYPE_REF_
+	VAL_TABLE_
+	SIG_GROUP_
+	SIG_VALTYPE_
+	SIGTYPE_VALTYPE_
+	BO_TX_BU_
+	BA_DEF_REL_
+	BA_REL_
+	BA_DEF_DEF_REL_
+	BU_SG_REL_
+	BU_EV_REL_
+	BU_BO_REL_
+	SG_MUL_VAL_
+
+BS_:
+
+BU_: ECU CLUSTER
+
+BO_ 256 MSG_SPEED: 8 ECU
+ SG_ Speed : 0|8@1+ (1,0) [0|255] "km/h" CLUSTER
+
+BO_ 512 MSG_SOC: 8 ECU
+ SG_ SOC : 0|8@1+ (1,0) [0|100] "%" CLUSTER
+
+BO_ 768 MSG_PACK_VOLT: 8 ECU
+ SG_ PackVolt : 0|16@1+ (0.1,0) [0|6553.5] "V" CLUSTER
+
+BO_ 769 MSG_DTC: 8 ECU
+ SG_ DtcCode : 0|16@1+ (1,0) [0|65535] "" CLUSTER
+
+BO_ 770 MSG_DRIVE_MODE: 8 ECU
+ SG_ DriveMode : 0|8@1+ (1,0) [0|3] "" CLUSTER
+
+BO_ 771 MSG_ODOMETER: 8 ECU
+ SG_ Odometer : 0|24@1+ (1,0) [0|16777215] "km" CLUSTER
+
+BO_ 772 MSG_RANGE: 8 ECU
+ SG_ Range : 0|16@1+ (1,0) [0|65535] "km" CLUSTER
+
+BO_ 773 MSG_POWER: 8 ECU
+ SG_ Power : 0|16@1+ (0.1,0) [0|6553.5] "kW" CLUSTER
+
+BO_ 774 MSG_REGEN: 8 ECU
+ SG_ Regen : 0|16@1+ (0.1,0) [0|6553.5] "kW" CLUSTER
+
+BO_ 775 MSG_SYS_TEMP: 8 ECU
+ SG_ SysTemp : 0|8@1- (1,0) [-128|127] "degC" CLUSTER
+
+CM_ "HARNESS-TODO: 이 파일 전체는 실차/BMS DBC와 대조되지 않은 상태다.
+MSG_SPEED(0x100)/MSG_SOC(0x200)는 can-signals.md 기준 '실차 매뉴얼 대조 완료'로
+기록되어 있으나 그 근거 문서 원본은 이 저장소/개발 PC 어디에도 없어 재검증 불가.
+MSG_PACK_VOLT(0x300)/MSG_DTC(0x301)/MSG_DRIVE_MODE(0x302)/MSG_ODOMETER(0x303)/
+MSG_RANGE(0x304)/MSG_POWER(0x305)/MSG_REGEN(0x306)/MSG_SYS_TEMP(0x307)는
+전부 placeholder다 (ID, 바이트 위치, 스케일, 부호 전부 미확정 가정).
+실차 DBC나 역추적 로그로 확정되면 이 파일과 main/twai.c를 함께 갱신할 것.";
+CM_ BO_ 256 "확정 (실차 매뉴얼 대조 완료 — 단, 근거 문서 위치 불명. main/twai.c 참고)";
+CM_ BO_ 512 "확정 (실차 매뉴얼 대조 완료 — 단, 근거 문서 위치 불명. main/twai.c 참고)";
+CM_ BO_ 768 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0.1V 단위/LE 가정.";
+CM_ BO_ 769 "HARNESS-TODO: placeholder, 실차 DBC 미대조. raw hex 그대로 노출, 의미 해석 안 함.";
+CM_ BO_ 770 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0=P,1=R,2=N,3=D 가정.";
+CM_ BO_ 771 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 누적 거리 24bit LE 가정(최대 16,777,215km).";
+CM_ BO_ 772 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 예상 주행가능거리 16bit LE 가정.";
+CM_ BO_ 773 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0.1kW 단위/LE/unsigned 가정 (회생제동과 별개 신호).";
+CM_ BO_ 774 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0.1kW 단위/LE/unsigned 가정 (출력과 별개 신호).";
+CM_ BO_ 775 "HARNESS-TODO: placeholder, 실차 DBC 미대조. signed 8bit, degC 직접값 가정(J1939식 -40 오프셋 아님).";
+
+VAL_ 770 DriveMode 0 "P" 1 "R" 2 "N" 3 "D" ;

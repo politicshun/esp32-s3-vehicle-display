@@ -30,6 +30,11 @@
   (`0x32b390 bytes free`). 실기기(COM12) 재플래싱 후 부팅 로그로 파티션 테이블
   (`factory ... 00400000`), BLE 어드버타이징, TWAI 드라이버, LVGL/GT911 터치 초기화까지
   전부 정상 확인.
+- 2026-07-31: sdkconfig.defaults 최신화 완료 (idf.py save-defconfig 기준, 날짜: 2026-07-31).
+  재생성 결과와 저장소 버전을 대조한 결과 새로 추가된 CONFIG_ 항목은 없었음 — 재생성본에서 빠진
+  `CONFIG_PARTITION_TABLE_CUSTOM_FILENAME`/`CONFIG_PARTITION_TABLE_FILENAME`/
+  `CONFIG_BT_BLUEDROID_ENABLED=n`은 값이 ESP-IDF Kconfig 기본값과 동일해서 save-defconfig가
+  생략한 것뿐, 충돌 아님(kconfgen 특성). 저장소 버전(주석 포함) 그대로 유지.
 
 ## API 사용 전 확인 규칙
 - `esp_lcd_*` 관련 구조체를 쓸 때는 위 ESP-IDF 버전에 해당하는 헤더를

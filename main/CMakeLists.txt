@@ -8,6 +8,8 @@ idf_component_register(
         "lvgl.c"
         "ui/ui.c"
         "ui/ui_style.c"
+        "ui/ui_glow_speed.c"
+        "ui/ui_glow_soc.c"
     INCLUDE_DIRS 
         "include"
         "."

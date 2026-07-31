@@ -7,10 +7,17 @@
 
 static const char *TAG = "TWAI_TASK";
 
-// TODO: 아래 두 CAN ID는 실제 차량/BMS DBC 스펙에 맞춰 반드시 확인 후 수정하세요.
+// TODO: 아래 CAN ID들은 실제 차량/BMS DBC 스펙에 맞춰 반드시 확인 후 수정하세요.
 // 지금은 임시 placeholder 입니다 (speed=0x100, soc=0x200과 동일한 패턴으로 가정).
-#define CAN_ID_PACK_VOLT 0x300
-#define CAN_ID_DTC       0x301
+// docs/hardware/vehicle.dbc에 동일한 가정으로 정리해뒀으니 같이 갱신할 것.
+#define CAN_ID_PACK_VOLT  0x300
+#define CAN_ID_DTC        0x301
+#define CAN_ID_DRIVE_MODE 0x302
+#define CAN_ID_ODO        0x303
+#define CAN_ID_RANGE      0x304
+#define CAN_ID_POWER      0x305
+#define CAN_ID_REGEN      0x306
+#define CAN_ID_SYS_TEMP   0x307
 
 static bool twai_start_with_retry(void) {
     twai_general_config_t g_config =
@@ -62,6 +69,34 @@ static void handle_rx_message(const twai_message_t *rx_msg) {
             break;
         case CAN_ID_DTC:
             current_data.dtc_code = (uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0]);
+            break;
+        case CAN_ID_DRIVE_MODE:
+            // HARNESS-TODO: 0=P,1=R,2=N,3=D 가정 (docs/hardware/vehicle.dbc VAL_ 참고), 실차 미대조
+            current_data.drive_mode = rx_msg->data[0];
+            break;
+        case CAN_ID_ODO:
+            // HARNESS-TODO: 24bit LE, 1km 단위 가정, 실차 미대조
+            current_data.odo_km = (uint32_t)rx_msg->data[0] |
+                                  ((uint32_t)rx_msg->data[1] << 8) |
+                                  ((uint32_t)rx_msg->data[2] << 16);
+            break;
+        case CAN_ID_RANGE:
+            // HARNESS-TODO: 16bit LE, 1km 단위 가정, 실차 미대조
+            current_data.range_km = (uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0]);
+            break;
+        case CAN_ID_POWER:
+            // HARNESS-TODO: 16bit LE, 0.1kW 단위 가정, 실차 미대조 (회생제동과 별개 신호)
+            current_data.power_kw =
+                ((uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0])) * 0.1f;
+            break;
+        case CAN_ID_REGEN:
+            // HARNESS-TODO: 16bit LE, 0.1kW 단위 가정, 실차 미대조 (출력과 별개 신호)
+            current_data.regen_kw =
+                ((uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0])) * 0.1f;
+            break;
+        case CAN_ID_SYS_TEMP:
+            // HARNESS-TODO: signed 8bit, degC 직접값 가정, 실차 미대조
+            current_data.sys_temp_c = (int8_t)rx_msg->data[0];
             break;
         default:
             // 정의 안 된 ID는 조용히 무시 (디버깅 시엔 아래 주석 해제)

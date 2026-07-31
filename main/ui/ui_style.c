@@ -9,6 +9,8 @@ void ui_style_init(void)
 {
     lv_style_init(&ui_style_bg);
     lv_style_set_bg_color(&ui_style_bg, UI_COLOR_BG);
+    lv_style_set_bg_grad_color(&ui_style_bg, UI_COLOR_BG_GRAD);
+    lv_style_set_bg_grad_dir(&ui_style_bg, LV_GRAD_DIR_VER);
     lv_style_set_bg_opa(&ui_style_bg, LV_OPA_COVER);
     lv_style_set_border_width(&ui_style_bg, 0);
     lv_style_set_pad_all(&ui_style_bg, 0);
