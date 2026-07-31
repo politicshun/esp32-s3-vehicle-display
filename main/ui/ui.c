@@ -476,6 +476,61 @@ static void tileview_event_cb(lv_event_t *e)
 }
 
 /* ---------------------------------------------------------------------
+ * 탭 기반 페이지 전환 (2026-07-31, 드래그 스와이프 대체)
+ * 800x480 화면을 좌/우 반반으로 나눈 투명 클릭존을 tileview 위에 얹어서, 사용자
+ * 입력이 tileview의 드래그 스크롤 로직까지 아예 안 내려가게 막는다(오브젝트 트리상
+ * 나중에 추가된 쪽이 위에서 터치를 가로챔) — tileview 자체의 SCROLLABLE은 그대로
+ * 둬서 lv_obj_set_tile_id()의 내부 애니메이션 스크롤(및 그걸 따라오는 dot 갱신용
+ * LV_EVENT_VALUE_CHANGED)은 그대로 동작한다.
+ * ------------------------------------------------------------------- */
+static void go_to_page(int delta)
+{
+    lv_obj_t *act = lv_tileview_get_tile_act(tileview);
+    int cur = 0;
+    for (int i = 0; i < 4; i++) {
+        if (pages[i] == act) {
+            cur = i;
+            break;
+        }
+    }
+
+    int target = cur + delta;
+    if (target < 0) target = 0;
+    if (target > 3) target = 3;
+
+    if (target != cur) {
+        lv_obj_set_tile_id(tileview, target, 0, LV_ANIM_ON);
+    }
+}
+
+static void tap_zone_event_cb(lv_event_t *e)
+{
+    int delta = (int)(intptr_t)lv_event_get_user_data(e);
+    go_to_page(delta);
+}
+
+static void build_tap_zones(lv_obj_t *parent)
+{
+    lv_obj_t *tap_left = lv_obj_create(parent);
+    lv_obj_remove_style_all(tap_left);
+    lv_obj_set_size(tap_left, lv_pct(50), lv_pct(100));
+    lv_obj_align(tap_left, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_style_bg_opa(tap_left, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(tap_left, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(tap_left, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(tap_left, tap_zone_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
+
+    lv_obj_t *tap_right = lv_obj_create(parent);
+    lv_obj_remove_style_all(tap_right);
+    lv_obj_set_size(tap_right, lv_pct(50), lv_pct(100));
+    lv_obj_align(tap_right, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_opa(tap_right, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(tap_right, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(tap_right, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(tap_right, tap_zone_event_cb, LV_EVENT_CLICKED, (void *)(intptr_t)1);
+}
+
+/* ---------------------------------------------------------------------
  * public API
  * ------------------------------------------------------------------- */
 void ui_init(lv_obj_t *parent)
@@ -494,6 +549,7 @@ void ui_init(lv_obj_t *parent)
     build_page_connect(tileview);
 
     build_page_indicator(parent);
+    build_tap_zones(parent);
 
     lv_obj_add_event_cb(tileview, tileview_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
