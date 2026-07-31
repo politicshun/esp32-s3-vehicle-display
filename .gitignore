@@ -12,6 +12,10 @@ sdkconfig.old
 *.swp
 Thumbs.db
 
+# scripts/ 파이썬 도구 실행 시 생기는 바이트코드 캐시 (재생성 가능)
+scripts/__pycache__/
+__pycache__/
+
 # Claude Code 로컬 전용 설정 (개인별 권한 오버라이드, 공유 대상 아님)
 .claude/settings.local.json
 
