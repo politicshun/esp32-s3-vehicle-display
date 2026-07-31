@@ -11,13 +11,13 @@ extern const lv_img_dsc_t ui_glow_soc;
 
 /*
  * main/include/vehicle_data.h 의 VehicleData_t 필드:
- *   speed(uint16_t), soc(uint8_t), pack_volt(float), dtc_code(uint16_t), ble_connected(bool),
- *   drive_mode(uint8_t), odo_km(uint32_t), range_km(uint16_t), power_kw(float), regen_kw(float),
- *   sys_temp_c(int8_t)
+ *   speed(int16_t, 음수=후진), soc(uint8_t), pack_volt(float), dtc_code(uint8_t),
+ *   ble_connected(bool), drive_mode(uint8_t), odo_km(uint32_t), range_km(uint16_t),
+ *   power_kw(float), regen_kw(float), sys_temp_c(int16_t)
  *
- * drive_mode/odo_km/range_km/power_kw/regen_kw/sys_temp_c는 docs/hardware/vehicle.dbc
- * 기준 CAN ID 0x302~0x307 placeholder다 (실차 DBC 미대조, main/twai.c의 HARNESS-TODO 참고).
- * 값 자체는 화면에 바인딩돼 있지만 스케일/의미를 신뢰하고 쓰면 안 된다.
+ * 2026-07-31: 차량단(인버터) 설계가 아직 안 끝나서, 이 프로젝트가 CAN 스펙을 먼저 정하고
+ * 인버터 쪽이 거기 맞추기로 함 — docs/hardware/vehicle.dbc(InvMsg1 0x100 / InvMsg2 0x200)에
+ * 우리가 직접 정의한 스펙이다. 화면 바인딩은 완료했지만 인버터 실물 구현/실기 검증 전이다.
  *
  * TRIP/시계/외기온도는 여전히 VehicleData_t에 소스가 없어 "HARNESS-TODO" 정적
  * placeholder로 남아있다. 필드가 추가되면 아래 ui_update()의 해당 블록만 채우면 된다.
@@ -514,7 +514,10 @@ static void anim_speed_exec_cb(void *var, int32_t v)
         lv_meter_set_indicator_end_value(meter_speed, speed_grad_segs[i], filled_end);
     }
     char buf[16];
-    snprintf(buf, sizeof(buf), "%u", (unsigned)v);
+    /* speed는 후진 시 음수(cluster.dbc offset -10)라 %u로 찍으면 거대한 양수로 깨짐.
+     * 게이지(위 세그먼트 루프)는 v<0이면 자동으로 전부 0으로 clamp되지만, 후진 방향을
+     * 시각적으로 표현하는 건 아직 안 함(라벨 숫자만 정확히 음수로 표시) — HARNESS-TODO */
+    snprintf(buf, sizeof(buf), "%d", (int)v);
     lv_label_set_text(lbl_speed, buf);
     /* 자릿수가 바뀌면 라벨 폭도 바뀌는데, align_to는 최초 호출 시점 폭 기준으로 한 번만
      * 위치를 잡아서 이후 폭이 늘어난 만큼 오른쪽으로 밀려 보인다 — 매번 다시 정렬해야 함. */
@@ -607,7 +610,7 @@ void ui_update(void)
         lv_obj_set_style_bg_color(banner_dtc, UI_COLOR_TEXT_SEC, 0);
         lv_obj_set_style_bg_opa(banner_dtc, LV_OPA_20, 0);
     } else {
-        snprintf(buf, sizeof(buf), "DTC: 0x%04X", (unsigned)d.dtc_code);
+        snprintf(buf, sizeof(buf), "DTC: 0x%02X", (unsigned)d.dtc_code);
         lv_label_set_text(lbl_dtc_code, buf);
         lv_obj_set_style_bg_color(banner_dtc, UI_COLOR_RED, 0);
         lv_obj_set_style_bg_opa(banner_dtc, LV_OPA_50, 0);

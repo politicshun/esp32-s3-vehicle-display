@@ -4,21 +4,23 @@
 #include <stdbool.h>
 
 // Core data share
-// HARNESS-TODO: drive_mode/odo_km/range_km/power_kw/regen_kw/sys_temp_c는
-// docs/hardware/vehicle.dbc 기준 CAN ID 0x302~0x307 placeholder다.
-// 실차 DBC로 확정되지 않았으니, 이 필드들의 값/스케일을 신뢰하고 쓰면 안 된다.
+// 2026-07-31: 차량단(인버터) 설계가 아직 안 끝나서, 이 프로젝트가 CAN 스펙을 먼저 정하고
+// 인버터 쪽이 거기 맞추기로 함(사용자 확인). 즉 아래 필드들은 "실차값 추측"이 아니라
+// docs/hardware/vehicle.dbc(=Desktop cluster.dbc 최종본)에 우리가 직접 정의한 스펙이다.
+// 다만 인버터 쪽 실구현/실기 검증 전이므로 "우리가 정했다" != "실물로 확인됐다"는 여전히 유효.
+// InvMsg1(CAN 0x100)/InvMsg2(CAN 0x200) 2개 메시지에 패킹돼 있다 (main/twai.c 참고).
 typedef struct {
-    uint16_t speed;         // 속도 (km/h)
-    uint8_t  soc;           // 배터리 잔량 (%)
-    float    pack_volt;     // 배터리 전압 (V)
-    uint16_t dtc_code;      // 고장 코드
-    bool     ble_connected; // BLE 연동 상태
-    uint8_t  drive_mode;    // 주행 모드: 0=P,1=R,2=N,3=D (placeholder, CAN 0x302)
-    uint32_t odo_km;        // 누적 주행거리 (placeholder, CAN 0x303)
-    uint16_t range_km;      // 예상 주행가능거리 (placeholder, CAN 0x304)
-    float    power_kw;      // 실시간 출력 (placeholder, CAN 0x305)
-    float    regen_kw;      // 회생제동 출력 (placeholder, CAN 0x306)
-    int8_t   sys_temp_c;    // 시스템/팩 온도 (placeholder, CAN 0x307)
+    int16_t  speed;         // 속도 (km/h, 음수=후진). InvMsg1 byte0, raw-10, [-10|245]
+    uint8_t  soc;           // 배터리 잔량 (%). InvMsg1 byte6, [0|100]
+    float    pack_volt;     // DC 링크 전압 (V, 정수 해상도). InvMsg1 byte5, [0|80]
+    uint8_t  dtc_code;      // 고장 코드 (단일 열거값, 비트마스크 아님). InvMsg1 byte2, [0|255]
+    bool     ble_connected; // BLE 연동 상태 (CAN 무관, main/ble.c)
+    uint8_t  drive_mode;    // 주행 모드: 0=P,1=R,2=N,3=D (VAL_ 테이블, cluster.dbc). InvMsg1 byte1
+    uint32_t odo_km;        // 누적 주행거리. InvMsg2 byte2~4 (24bit)
+    uint16_t range_km;      // 예상 주행가능거리 (0~255km 해상도). InvMsg2 byte0
+    float    power_kw;      // 실시간 출력 (kW, 정수 해상도). InvMsg2 byte5
+    float    regen_kw;      // 회생제동 출력 (kW, 정수 해상도). InvMsg2 byte1
+    int16_t  sys_temp_c;    // 시스템 온도 (degC). InvMsg1 byte7, raw-20, [-20|235] — int8_t 범위(127) 초과라 int16_t 사용
 } VehicleData_t;
 
 void vehicle_data_init(void);

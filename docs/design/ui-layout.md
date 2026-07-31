@@ -4,31 +4,34 @@
 > 화면 구성: `lv_tileview` 기반 4페이지 가로 스와이프 (인디케이터 dot 4개, 하단 중앙)
 > 구현: `main/ui/ui.c`, `main/ui/ui_style.c`
 
-## ⚠️ 데이터 소스 제약 (2026-07-30 갱신 — CANdb++ 도입 이후)
+## ⚠️ 데이터 소스 제약 (2026-07-31 갱신 — 자체 CAN 스펙 확정 이후)
 
-`main/include/vehicle_data.h`의 `VehicleData_t`에 아래 11개 필드가 존재한다:
+2026-07-31: 차량단(인버터) 설계가 아직 안 끝나서, 이 프로젝트가 CAN 스펙을 먼저 정하고
+인버터 쪽이 거기 맞추기로 함(사용자 확인). `docs/hardware/vehicle.dbc`(Desktop `cluster.dbc`
+사본)가 그 스펙이고, `main/include/vehicle_data.h`의 `VehicleData_t`에 아래 11개 필드가
+존재한다:
 
 ```c
 typedef struct {
-    uint16_t speed;
-    uint8_t  soc;
-    float    pack_volt;
-    uint16_t dtc_code;
-    bool     ble_connected;
-    uint8_t  drive_mode;   // placeholder, CAN 0x302
-    uint32_t odo_km;       // placeholder, CAN 0x303
-    uint16_t range_km;     // placeholder, CAN 0x304
-    float    power_kw;     // placeholder, CAN 0x305
-    float    regen_kw;     // placeholder, CAN 0x306
-    int8_t   sys_temp_c;   // placeholder, CAN 0x307
+    int16_t  speed;        // InvMsg1(0x100) byte0, 음수=후진
+    uint8_t  soc;           // InvMsg1 byte6
+    float    pack_volt;     // InvMsg1 byte5 (DClinkVoltage)
+    uint8_t  dtc_code;      // InvMsg1 byte2
+    bool     ble_connected; // CAN 무관 (main/ble.c)
+    uint8_t  drive_mode;    // InvMsg1 byte1, VAL_: 0=P 1=R 2=N 3=D
+    uint32_t odo_km;        // InvMsg2(0x200) byte2~4 (24bit)
+    uint16_t range_km;      // InvMsg2 byte0
+    float    power_kw;      // InvMsg2 byte5
+    float    regen_kw;      // InvMsg2 byte1
+    int16_t  sys_temp_c;    // InvMsg1 byte7
 } VehicleData_t;
 ```
 
-drive_mode/odo_km/range_km/power_kw/regen_kw/sys_temp_c 6개는 `docs/hardware/vehicle.dbc`에
-정리된 **placeholder CAN ID(0x302~0x307)**로 화면까지 바인딩은 되어 있지만, 실차 DBC와
-대조된 값이 아니다(ID/바이트 위치/스케일 전부 가정). CLAUDE.md 0번 원칙에 따라 이 사실을
-UI 코드/문서 어디서든 숨기지 않는다. 실차 스펙이 확정되면 `vehicle.dbc` + `twai.c`의 해당
-ID/스케일만 갱신하면 되고, UI 바인딩 코드 자체는 이미 완료된 상태다.
+drive_mode/odo_km/range_km/power_kw/regen_kw/sys_temp_c/speed/soc/pack_volt/dtc_code
+9개는 `docs/hardware/vehicle.dbc`에 정리된 **자체 확정 스펙**으로 화면까지 바인딩은
+되어 있지만, 인버터 쪽 실물 구현·실기 검증 전이라 "스펙을 정했다" ≠ "실물로 확인됐다"다.
+인버터 실물이 이 스펙대로 동작하는 게 확인되면 `docs/design/can-signals.md`의 상태 열만
+갱신하면 되고, UI 바인딩 코드 자체는 이미 완료된 상태다.
 
 TRIP/시계/외기온도 3개는 여전히 `VehicleData_t`에 소스가 없다. 레이아웃은 잡아두되
 `ui.c` 안에서 `HARNESS-TODO` 주석이 달린 정적 placeholder(`--`)로만 표시했다.
@@ -107,29 +110,32 @@ CPU1이 `draw_shadow`에 계속 묶여 idle을 못 돌았음 (백트레이스로
 
 ## Page 1 — Drive (`build_page_drive`)
 
-- Speed(live, `%u km/h`): 280px `lv_meter` 게이지(0~200km/h 표시 스케일, 20단위 눈금 숫자,
-  160~200 레드존) 중앙에 48px 숫자
-- MODE(Drive Mode, live-placeholder): `drive_mode` 값을 P/R/N/D로 배지에 표시 (CAN 0x302, 실차 미대조)
-- ODO(live-placeholder): `odo_km` 값 표시 (CAN 0x303, 실차 미대조) — `make_info_card` 카드(좌하단)
+- Speed(live, `%d km/h`): 280px `lv_meter` 게이지(0~200km/h 표시 스케일, 20단위 눈금 숫자,
+  160~200 레드존) 중앙에 48px 숫자. `speed`는 후진 시 음수(InvMsg1 byte0, offset -10)가
+  될 수 있는데, 라벨 숫자는 정확히 음수로 찍지만(2026-07-31 %u→%d 수정) 게이지 아크는 음수
+  구간을 시각적으로 표현하지 않고 0으로 clamp됨 — **HARNESS-TODO: 후진 표시 UI 미구현**
+- MODE(Drive Mode, live): `drive_mode` 값을 P/R/N/D로 배지에 표시 (InvMsg1 byte1,
+  `docs/hardware/vehicle.dbc`의 VAL_ 테이블과 1:1 대응, 자체 확정 스펙)
+- ODO(live): `odo_km` 값 표시 (InvMsg2 byte2~4, 자체 확정 스펙) — `make_info_card` 카드(좌하단)
 - TRIP: **HARNESS-TODO** — 필드 자체가 없음, `make_info_card` 카드(우하단)
 
 ## Page 2 — Battery (`build_page_battery`)
 
 - SOC(live): 240px `lv_meter` 게이지(0~100%, 20단위 눈금 숫자, 0~20% 레드존), 20% 이하 시
   값 아크 RED 전환
-- Pack Voltage(live, `%.1f V`) — 카드로 표시, 게이지 바로 아래 중앙
-- Range(live-placeholder): `range_km` 값 표시 (CAN 0x304, 실차 미대조) — 카드(좌하단)
-- Power/Regen(live-placeholder): `power_kw`/`regen_kw` 두 값을 카드 한 개에 2줄로 표시
-  (CAN 0x305/0x306, 실차 미대조) — 카드(우하단)
+- Pack Voltage(live, `%.1f V`) — 카드로 표시, 게이지 바로 아래 중앙 (InvMsg1 byte5, 정수 V 해상도)
+- Range(live): `range_km` 값 표시 (InvMsg2 byte0, [0\|255]km) — 카드(좌하단)
+- Power/Regen(live): `power_kw`/`regen_kw` 두 값을 카드 한 개에 2줄로 표시
+  (InvMsg2 byte5/byte1, 정수 kW 해상도) — 카드(우하단)
 
 ## Page 3 — Diagnostics (`build_page_diag`)
 
-- DTC(live): 0="DTC: OK"(회색 배너), 0이 아니면 RED 배너 + raw hex 값 그대로 표시
-  (0x300/0x301 CAN ID가 `docs/design/can-signals.md`상 실차 DBC 미대조 placeholder이므로,
-  UI는 값을 해석하지 않고 그대로 노출)
-- Pack Voltage(live) / Sys Temp(live-placeholder, `sys_temp_c`, CAN 0x307): 220×140 큰 카드 2개,
-  배너 아래 가운데 정렬. Sys Temp는 `UI_TEMP_WARN_C`(placeholder 임계값, 60°C) 이상이면
-  카드 테두리와 텍스트가 RED로 전환 (실차 BMS 경고 기준 미확정)
+- DTC(live): 0="DTC: OK"(회색 배너), 0이 아니면 RED 배너 + raw hex 값(`0x%02X`, 1바이트) 그대로
+  표시 (InvMsg1 byte2 — 단일 열거값으로 가정, 여러 고장 동시 표현이 필요해지면 비트마스크로
+  재설계 필요)
+- Pack Voltage(live) / Sys Temp(live, `sys_temp_c`, InvMsg1 byte7): 220×140 큰 카드 2개,
+  배너 아래 가운데 정렬. Sys Temp는 `UI_TEMP_WARN_C`(60°C, 실차 BMS 경고 기준과 무관하게
+  UI 자체 임계값) 이상이면 카드 테두리와 텍스트가 RED로 전환
 
 ## Page 4 — Connectivity (`build_page_connect`)
 
@@ -140,25 +146,27 @@ CPU1이 `draw_shadow`에 계속 묶여 idle을 못 돌았음 (백트레이스로
   빈 공간을 의미 있게 채우기 위해 추가
 - Time/Out Temp: **HARNESS-TODO** (RTC/온도센서 소스 미확정) — 카드(좌하단/우하단)
 
-## "핵심 표시 항목" 표 커버리지 (2026-07-31 갱신 — CAN ID 전수 재분류 반영)
+## "핵심 표시 항목" 표 커버리지 (2026-07-31 갱신 — 자체 CAN 스펙 확정 이후)
 
-> **2026-07-31 정정**: Speed(0x100)/SOC(0x200)를 "확정 live"로 분류했던 이전 버전은 근거가
-> 없었다(근거 문서 위치 불명 = 검증 불가와 동일). 사용자 확인 결과 초기 테스트용 임의 할당
-> ID였음 — 아래 10개 CAN 신호는 전부 placeholder-live로 재분류한다. 실차 DBC와 대조된 신호는
-> 현재 **0개**.
+> **2026-07-31**: 차량단(인버터) 설계가 아직 안 끝나서 이 프로젝트가 CAN 스펙을 먼저 정하고
+> 인버터 쪽이 맞추기로 함. 신호당 메시지 1개(10개 ID)였던 이전 구조를 InvMsg1(0x100)/
+> InvMsg2(0x200) 2개 메시지로 패킹 재설계함(`docs/hardware/vehicle.dbc`,
+> `docs/design/can-signals.md`). 아래 10개 신호는 "자체 확정 스펙"이지 "실물 검증 완료"는
+> 아니다 — 인버터 실물이 없어서 검증 자체가 아직 불가능한 상태.
 
-사용자 제공 가이드 이미지의 항목 전부가 (placeholder-live / HARNESS-TODO placeholder 중
+사용자 제공 가이드 이미지의 항목 전부가 (자체 확정-live / HARNESS-TODO placeholder 중
 하나로) 화면에 노출되도록 반영 완료:
-- **placeholder-live 10개**: Speed(0x100)/SOC(0x200)/Pack Voltage(0x300)/DTC(0x301)/
-  Drive Mode(0x302)/ODO(0x303)/Range(0x304)/Power(0x305)/Regen(0x306)/Sys Temp(0x307) —
-  `docs/hardware/vehicle.dbc` 기준 CAN ID·스케일 전부 가정(초기 테스트용 임의 할당 포함),
-  화면 바인딩은 완료했지만 값 자체는 신뢰 금지
+- **자체 확정-live 10개**: Speed/DriveMode/DTC/DClinkVoltage(Pack Voltage)/SOC/Temp(Sys Temp)는
+  InvMsg1(0x100)에, DriveRange(Range)/RegenPower(Regen)/Odometer(ODO)/Power는 InvMsg2(0x200)에
+  패킹 — `docs/hardware/vehicle.dbc` 기준, 화면 바인딩 완료. 인버터측 실물 구현/실기 검증 전
+  이라는 점만 유의(스펙 확정 ≠ 실물 확인)
 - **HARNESS-TODO 3개**: TRIP/Time/Out Temp — `VehicleData_t`에 필드 자체가 없어 여전히 정적
-  `--` (Sys Temp와 혼동 주의: Sys Temp는 Page 3의 `sys_temp_c`, CAN 0x307 placeholder로
-  이미 바인딩되어 있고, Out Temp는 Page 4의 별개 항목으로 CAN 신호 자체가 없음)
+  `--` (Sys Temp와 혼동 주의: Sys Temp는 Page 3의 `sys_temp_c`, InvMsg1 byte7로 이미
+  바인딩되어 있고, Out Temp는 Page 4의 별개 항목으로 CAN 신호 자체가 없음)
 
-placeholder-live 10개는 실차 DBC 확정 또는 KVASER 실차 역추적 로그로 값이 확인되는 대로
-`vehicle.dbc` + `twai.c`의 ID/스케일만 갱신하면 되고, UI 바인딩은 이미 끝난 상태.
+인버터 실물이 이 스펙대로 구현되고 실기로 검증되면, `docs/design/can-signals.md`의 상태
+열만 "자체 확정 — 인버터측 구현/실기 검증 대기" → "실기 검증 완료"로 갱신하면 되고,
+UI 바인딩/디코딩 코드는 이미 끝난 상태.
 
 ## 알려진 미구현 (다음 세션 후보)
 

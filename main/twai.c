@@ -7,17 +7,14 @@
 
 static const char *TAG = "TWAI_TASK";
 
-// TODO: 아래 CAN ID들은 실제 차량/BMS DBC 스펙에 맞춰 반드시 확인 후 수정하세요.
-// 지금은 임시 placeholder 입니다 (speed=0x100, soc=0x200과 동일한 패턴으로 가정).
-// docs/hardware/vehicle.dbc에 동일한 가정으로 정리해뒀으니 같이 갱신할 것.
-#define CAN_ID_PACK_VOLT  0x300
-#define CAN_ID_DTC        0x301
-#define CAN_ID_DRIVE_MODE 0x302
-#define CAN_ID_ODO        0x303
-#define CAN_ID_RANGE      0x304
-#define CAN_ID_POWER      0x305
-#define CAN_ID_REGEN      0x306
-#define CAN_ID_SYS_TEMP   0x307
+// 2026-07-31: 차량단(인버터) 설계가 아직 안 끝나서, 이 프로젝트가 CAN 스펙을 먼저 정하고
+// 인버터 쪽이 거기 맞추기로 함 — 아래는 "실차값 추측"이 아니라 docs/hardware/vehicle.dbc
+// (=Desktop cluster.dbc 최종본, GenMsgCycleTime/VAL_ 포함)에 우리가 직접 정의한 스펙이다.
+// 단, 인버터 쪽 실구현/실기 검증 전이므로 "우리가 정했다" != "실물로 확인됐다".
+// Period(GenMsgCycleTime): InvMsg1=100ms, InvMsg2=200ms — 아직 코드에서 타임아웃/끊김 감지에는
+// 안 쓰고 있음 (HARNESS-TODO: 필요해지면 이 값 기준으로 최종 수신시각 추적 로직 추가).
+#define CAN_ID_INV_MSG1 0x100  // InvMsg1: Speed/DriveMode/DTC/DClinkVoltage/SOC/Temp
+#define CAN_ID_INV_MSG2 0x200  // InvMsg2: DriveRange/RegenPower/Odometer/Power
 
 static bool twai_start_with_retry(void) {
     twai_general_config_t g_config =
@@ -56,47 +53,28 @@ static void handle_rx_message(const twai_message_t *rx_msg) {
     vehicle_data_get(&current_data);
 
     switch (rx_msg->identifier) {
-        case 0x100:
-            current_data.speed = rx_msg->data[0];
+        case CAN_ID_INV_MSG1:
+            // cluster.dbc InvMsg1 (BU_ INVERTER->CLUSTER, DLC8, 100ms) 바이트 배치:
+            // byte0=Speed byte1=DriveMode byte2=DTC byte3~4=(예약) byte5=DClinkVoltage
+            // byte6=SOC byte7=Temp — 전부 raw unsigned(@1+), offset은 산술로만 적용(2의 보수 아님)
+            current_data.speed = (int16_t)rx_msg->data[0] - 10;       // factor1, offset-10, [-10|245]
+            current_data.drive_mode = rx_msg->data[1];                // VAL_: 0=P 1=R 2=N 3=D
+            current_data.dtc_code = rx_msg->data[2];                  // [0|255], 단일 열거값
+            // byte3~4: 예약(미사용)
+            current_data.pack_volt = (float)rx_msg->data[5];          // DClinkVoltage, factor1, [0|80]
+            current_data.soc = rx_msg->data[6];                       // [0|100]
+            current_data.sys_temp_c = (int16_t)rx_msg->data[7] - 20;  // factor1, offset-20, [-20|235]
             break;
-        case 0x200:
-            current_data.soc = rx_msg->data[0];
-            break;
-        case CAN_ID_PACK_VOLT:
-            // TODO: 실제 스케일/바이트오더 확인 필요. 우선 0.1V 단위 16비트로 가정.
-            current_data.pack_volt =
-                ((uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0])) * 0.1f;
-            break;
-        case CAN_ID_DTC:
-            current_data.dtc_code = (uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0]);
-            break;
-        case CAN_ID_DRIVE_MODE:
-            // HARNESS-TODO: 0=P,1=R,2=N,3=D 가정 (docs/hardware/vehicle.dbc VAL_ 참고), 실차 미대조
-            current_data.drive_mode = rx_msg->data[0];
-            break;
-        case CAN_ID_ODO:
-            // HARNESS-TODO: 24bit LE, 1km 단위 가정, 실차 미대조
-            current_data.odo_km = (uint32_t)rx_msg->data[0] |
-                                  ((uint32_t)rx_msg->data[1] << 8) |
-                                  ((uint32_t)rx_msg->data[2] << 16);
-            break;
-        case CAN_ID_RANGE:
-            // HARNESS-TODO: 16bit LE, 1km 단위 가정, 실차 미대조
-            current_data.range_km = (uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0]);
-            break;
-        case CAN_ID_POWER:
-            // HARNESS-TODO: 16bit LE, 0.1kW 단위 가정, 실차 미대조 (회생제동과 별개 신호)
-            current_data.power_kw =
-                ((uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0])) * 0.1f;
-            break;
-        case CAN_ID_REGEN:
-            // HARNESS-TODO: 16bit LE, 0.1kW 단위 가정, 실차 미대조 (출력과 별개 신호)
-            current_data.regen_kw =
-                ((uint16_t)(rx_msg->data[1] << 8 | rx_msg->data[0])) * 0.1f;
-            break;
-        case CAN_ID_SYS_TEMP:
-            // HARNESS-TODO: signed 8bit, degC 직접값 가정, 실차 미대조
-            current_data.sys_temp_c = (int8_t)rx_msg->data[0];
+        case CAN_ID_INV_MSG2:
+            // cluster.dbc InvMsg2 (BU_ INVERTER->CLUSTER, DLC8, 200ms) 바이트 배치:
+            // byte0=DriveRange byte1=RegenPower byte2~4=Odometer(24bit LE) byte5=Power byte6~7=(예약)
+            current_data.range_km = rx_msg->data[0];                  // [0|255]km
+            current_data.regen_kw = (float)rx_msg->data[1];           // factor1, [0|255]kW
+            current_data.odo_km = (uint32_t)rx_msg->data[2] |
+                                  ((uint32_t)rx_msg->data[3] << 8) |
+                                  ((uint32_t)rx_msg->data[4] << 16);   // [0|16777215]km
+            current_data.power_kw = (float)rx_msg->data[5];           // factor1, [0|255]kW
+            // byte6~7: 예약(미사용)
             break;
         default:
             // 정의 안 된 ID는 조용히 무시 (디버깅 시엔 아래 주석 해제)

@@ -33,56 +33,82 @@ NS_ :
 
 BS_:
 
-BU_: ECU CLUSTER
+BU_: CLUSTER INVERTER
 
-BO_ 256 MSG_SPEED: 8 ECU
- SG_ Speed : 0|8@1+ (1,0) [0|255] "km/h" CLUSTER
 
-BO_ 512 MSG_SOC: 8 ECU
- SG_ SOC : 0|8@1+ (1,0) [0|100] "%" CLUSTER
+BO_ 512 InvMsg2: 8 INVERTER
+ SG_ Power : 40|8@1+ (1,0) [0|255] "kW"  CLUSTER
+ SG_ RegenPower : 8|8@1+ (1,0) [0|255] "kW"  CLUSTER
+ SG_ Odometer : 16|24@1+ (1,0) [0|16777215] ""  CLUSTER
+ SG_ DriveRange : 0|8@1+ (1,0) [0|255] "km"  CLUSTER
 
-BO_ 768 MSG_PACK_VOLT: 8 ECU
- SG_ PackVolt : 0|16@1+ (0.1,0) [0|6553.5] "V" CLUSTER
+BO_ 256 InvMsg1: 8 INVERTER
+ SG_ DTC : 16|8@1+ (1,0) [0|255] ""  CLUSTER
+ SG_ Temp : 56|8@1+ (1,-20) [-20|235] "degC"  CLUSTER
+ SG_ SOC : 48|8@1+ (1,0) [0|100] "%"  CLUSTER
+ SG_ DClinkVoltage : 40|8@1+ (1,0) [0|80] "V"  CLUSTER
+ SG_ DriveMode : 8|8@1+ (1,0) [0|3] ""  CLUSTER
+ SG_ Speed : 0|8@1+ (1,-10) [-10|245] "km/h"  CLUSTER
 
-BO_ 769 MSG_DTC: 8 ECU
- SG_ DtcCode : 0|16@1+ (1,0) [0|65535] "" CLUSTER
 
-BO_ 770 MSG_DRIVE_MODE: 8 ECU
- SG_ DriveMode : 0|8@1+ (1,0) [0|3] "" CLUSTER
 
-BO_ 771 MSG_ODOMETER: 8 ECU
- SG_ Odometer : 0|24@1+ (1,0) [0|16777215] "km" CLUSTER
+EV_ EnvKlemme30: 0 [0|1] "" 1 1 DUMMY_NODE_VECTOR0 Vector__XXX;
 
-BO_ 772 MSG_RANGE: 8 ECU
- SG_ Range : 0|16@1+ (1,0) [0|65535] "km" CLUSTER
+EV_ EnvKlemme15: 0 [0|1] "" 0 2 DUMMY_NODE_VECTOR0 Vector__XXX;
 
-BO_ 773 MSG_POWER: 8 ECU
- SG_ Power : 0|16@1+ (0.1,0) [0|6553.5] "kW" CLUSTER
+BA_DEF_  "MultiplexExtEnabled" ENUM  "No","Yes";
+BA_DEF_ BU_  "NodeLayerModules" STRING ;
+BA_DEF_ BO_  "GenMsgStartDelayTime" INT 0 65535;
+BA_DEF_ SG_  "NWM-WakeupAllowed" ENUM  "No","Yes";
+BA_DEF_ BO_  "NmMessage" ENUM  "no","yes";
+BA_DEF_ BO_  "GenMsgILSupport" ENUM  "No","Yes";
+BA_DEF_ BU_  "NmNode" ENUM  "no","yes";
+BA_DEF_ BU_  "NmStationAddress" INT 0 63;
+BA_DEF_  "NmBaseAddress" HEX 1024 1087;
+BA_DEF_ BO_  "GenMsgCycleTimeFast" INT 0 50000;
+BA_DEF_  "BusType" STRING ;
+BA_DEF_ BO_  "GenMsgCycleTime" INT 0 50000;
+BA_DEF_ BO_  "GenMsgDelayTime" INT 0 1000;
+BA_DEF_ BO_  "GenMsgNrOfRepetition" INT 0 999999;
+BA_DEF_ BO_  "GenMsgSendType" ENUM  "Cyclic","NotUsed","NotUsed","NotUsed","NotUsed","NotUsed","NotUsed","IfActive","NoMsgSendType","NotUsed","vector_leerstring";
+BA_DEF_ SG_  "GenSigInactiveValue" INT 0 100000;
+BA_DEF_ SG_  "GenSigSendType" ENUM  "Cyclic","OnWrite","OnWriteWithRepetition","OnChange","OnChangeWithRepetition","IfActive","IfActiveWithRepetition","NoSigSendType","NotUsed","NotUsed","NotUsed","NotUsed","NotUsed";
+BA_DEF_ SG_  "GenSigStartValue" FLOAT 0 100000000000;
+BA_DEF_DEF_  "MultiplexExtEnabled" "No";
+BA_DEF_DEF_  "NodeLayerModules" "CANoeILNLVector.dll";
+BA_DEF_DEF_  "GenMsgStartDelayTime" 0;
+BA_DEF_DEF_  "NWM-WakeupAllowed" "";
+BA_DEF_DEF_  "NmMessage" "no";
+BA_DEF_DEF_  "GenMsgILSupport" "Yes";
+BA_DEF_DEF_  "NmNode" "no";
+BA_DEF_DEF_  "NmStationAddress" 0;
+BA_DEF_DEF_  "NmBaseAddress" 1024;
+BA_DEF_DEF_  "GenMsgCycleTimeFast" 0;
+BA_DEF_DEF_  "BusType" "";
+BA_DEF_DEF_  "GenMsgCycleTime" 0;
+BA_DEF_DEF_  "GenMsgDelayTime" 0;
+BA_DEF_DEF_  "GenMsgNrOfRepetition" 0;
+BA_DEF_DEF_  "GenMsgSendType" "NoMsgSendType";
+BA_DEF_DEF_  "GenSigInactiveValue" 0;
+BA_DEF_DEF_  "GenSigSendType" "Cyclic";
+BA_DEF_DEF_  "GenSigStartValue" 0;
+BA_ "BusType" "CAN";
+BA_ "GenMsgCycleTime" BO_ 512 200;
+BA_ "GenMsgCycleTime" BO_ 256 100;
+BA_ "GenSigStartValue" SG_ 256 Temp 20;
+BA_ "GenSigStartValue" SG_ 256 Speed 10;
+VAL_ 256 DriveMode 0 "P" 1 "R" 2 "N" 3 "D" ;
 
-BO_ 774 MSG_REGEN: 8 ECU
- SG_ Regen : 0|16@1+ (0.1,0) [0|6553.5] "kW" CLUSTER
-
-BO_ 775 MSG_SYS_TEMP: 8 ECU
- SG_ SysTemp : 0|8@1- (1,0) [-128|127] "degC" CLUSTER
-
-CM_ "HARNESS-TODO: 이 파일 전체는 실차/BMS DBC와 대조되지 않은 상태다.
-2026-07-31 정정: MSG_SPEED(0x100)/MSG_SOC(0x200)를 포함해 이 파일의 모든 메시지가
-실차 미대조 임시 선언(초기 테스트용 임의 할당 ID)이다. 이전에 0x100/0x200을
-'실차 매뉴얼 대조 완료'로 기록했던 것은 근거 문서가 저장소/개발 PC 어디에도 없어
-재검증 불가능한 상태였고, 사용자 확인 결과 실제로는 테스트용 임의 할당이었다.
-MSG_PACK_VOLT(0x300)/MSG_DTC(0x301)/MSG_DRIVE_MODE(0x302)/MSG_ODOMETER(0x303)/
-MSG_RANGE(0x304)/MSG_POWER(0x305)/MSG_REGEN(0x306)/MSG_SYS_TEMP(0x307)도 마찬가지로
-전부 placeholder다 (ID, 바이트 위치, 스케일, 부호 전부 미확정 가정).
-실차 DBC나 역추적 로그로 확정되면 이 파일과 main/twai.c를 함께 갱신할 것.";
-CM_ BO_ 256 "HARNESS-TODO: 확인필요 — 초기 테스트용 임의 할당, 실차 미대조 (2026-07-31 재분류)";
-CM_ BO_ 512 "HARNESS-TODO: 확인필요 — 초기 테스트용 임의 할당, 실차 미대조 (2026-07-31 재분류)";
-CM_ BO_ 768 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0.1V 단위/LE 가정.";
-CM_ BO_ 769 "HARNESS-TODO: placeholder, 실차 DBC 미대조. raw hex 그대로 노출, 의미 해석 안 함.";
-CM_ BO_ 770 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0=P,1=R,2=N,3=D 가정.";
-CM_ BO_ 771 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 누적 거리 24bit LE 가정(최대 16,777,215km).";
-CM_ BO_ 772 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 예상 주행가능거리 16bit LE 가정.";
-CM_ BO_ 773 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0.1kW 단위/LE/unsigned 가정 (회생제동과 별개 신호).";
-CM_ BO_ 774 "HARNESS-TODO: placeholder, 실차 DBC 미대조. 0.1kW 단위/LE/unsigned 가정 (출력과 별개 신호).";
-CM_ BO_ 775 "HARNESS-TODO: placeholder, 실차 DBC 미대조. signed 8bit, degC 직접값 가정(J1939식 -40 오프셋 아님).";
-
-VAL_ 770 DriveMode 0 "P" 1 "R" 2 "N" 3 "D" ;
+CM_ "2026-07-31: 차량단(인버터) 설계가 아직 끝나지 않아, 이 프로젝트가 CAN 스펙을 먼저
+정하고 인버터 쪽이 여기 맞추기로 함(사용자 확인) — 즉 이 파일은 더 이상 '실차값 추측'이
+아니라 저희가 직접 정의한 스펙이다. Desktop의 cluster.dbc가 원본이고 이 파일은 그 사본
+(main/twai.c/vehicle_data.h를 이 파일 기준으로 맞춤). InvMsg1(0x100)/InvMsg2(0x200)
+2개 메시지에 10개 신호를 패킹했다 (이전 리비전엔 신호당 메시지 1개씩 총 10개 ID를 썼음).
+Reserved 바이트(InvMsg1의 byte3~4, InvMsg2의 byte6~7)는 DBC 문법상 signal 없인 표현이
+안 돼 이 파일엔 안 보이지만 실제로 비어있다 — main/twai.c 주석 참고. 인버터 쪽 실물
+구현/실기 검증 전이므로 '스펙을 정했다' != '실물로 확인됐다'는 여전히 유효하다.";
+CM_ BO_ 256 "Speed/DriveMode처럼 빠르게 갱신돼야 하는 값과 SOC/Temp/DTC/DClinkVoltage처럼
+느려도 되는 값이 한 메시지에 섞여있어, GenMsgCycleTime을 더 빠른 쪽(Speed) 기준인
+100ms로 잡음.";
+CM_ BO_ 512 "DriveRange/RegenPower/Odometer/Power — InvMsg1보다 느리게 변하는 값들이라
+GenMsgCycleTime 200ms.";
