@@ -116,24 +116,26 @@ CPU1이 `draw_shadow`에 계속 묶여 idle을 못 돌았음 (백트레이스로
   구간을 시각적으로 표현하지 않고 0으로 clamp됨 — **HARNESS-TODO: 후진 표시 UI 미구현**
 - MODE(Drive Mode, live): `drive_mode` 값을 P/R/N/D로 배지에 표시 (InvMsg1 byte1,
   `docs/hardware/vehicle.dbc`의 VAL_ 테이블과 1:1 대응, 자체 확정 스펙)
-- ODO(live): `odo_km` 값 표시 (InvMsg2 byte2~4, 자체 확정 스펙) — `make_info_card` 카드(좌하단)
+- ODO(live): `odo_km` 값 표시 (InvMsg2 byte4~5, 16bit factor5 압축, 자체 확정 스펙) —
+  `make_info_card` 카드(좌하단)
 - TRIP: **HARNESS-TODO** — 필드 자체가 없음, `make_info_card` 카드(우하단)
 
 ## Page 2 — Battery (`build_page_battery`)
 
 - SOC(live): 240px `lv_meter` 게이지(0~100%, 20단위 눈금 숫자, 0~20% 레드존), 20% 이하 시
   값 아크 RED 전환
-- Pack Voltage(live, `%.1f V`) — 카드로 표시, 게이지 바로 아래 중앙 (InvMsg1 byte5, 정수 V 해상도)
-- Range(live): `range_km` 값 표시 (InvMsg2 byte0, [0\|255]km) — 카드(좌하단)
+- Pack Voltage(live, `%.1f V`) — 카드로 표시, 게이지 바로 아래 중앙 (InvMsg2 byte1, 정수 V 해상도)
+- Range(live): `range_km` 값 표시 (InvMsg2 byte3, [0\|255]km) — 카드(좌하단)
 - Power/Regen(live): `power_kw`/`regen_kw` 두 값을 카드 한 개에 2줄로 표시
-  (InvMsg2 byte5/byte1, 정수 kW 해상도) — 카드(우하단)
+  (InvMsg1 byte3/byte4, 정수 kW 해상도 — 2026-07-31 우선도 재배치로 InvMsg1로 이동,
+  운전 중 계속 바뀌는 값이라 빠른 주기가 맞다고 판단) — 카드(우하단)
 
 ## Page 3 — Diagnostics (`build_page_diag`)
 
 - DTC(live): 0="DTC: OK"(회색 배너), 0이 아니면 RED 배너 + raw hex 값(`0x%02X`, 1바이트) 그대로
   표시 (InvMsg1 byte2 — 단일 열거값으로 가정, 여러 고장 동시 표현이 필요해지면 비트마스크로
   재설계 필요)
-- Pack Voltage(live) / Sys Temp(live, `sys_temp_c`, InvMsg1 byte7): 220×140 큰 카드 2개,
+- Pack Voltage(live) / Sys Temp(live, `sys_temp_c`, InvMsg2 byte2): 220×140 큰 카드 2개,
   배너 아래 가운데 정렬. Sys Temp는 `UI_TEMP_WARN_C`(60°C, 실차 BMS 경고 기준과 무관하게
   UI 자체 임계값) 이상이면 카드 테두리와 텍스트가 RED로 전환
 
@@ -156,12 +158,13 @@ CPU1이 `draw_shadow`에 계속 묶여 idle을 못 돌았음 (백트레이스로
 
 사용자 제공 가이드 이미지의 항목 전부가 (자체 확정-live / HARNESS-TODO placeholder 중
 하나로) 화면에 노출되도록 반영 완료:
-- **자체 확정-live 10개**: Speed/DriveMode/DTC/DClinkVoltage(Pack Voltage)/SOC/Temp(Sys Temp)는
-  InvMsg1(0x100)에, DriveRange(Range)/RegenPower(Regen)/Odometer(ODO)/Power는 InvMsg2(0x200)에
-  패킹 — `docs/hardware/vehicle.dbc` 기준, 화면 바인딩 완료. 인버터측 실물 구현/실기 검증 전
-  이라는 점만 유의(스펙 확정 ≠ 실물 확인)
+- **자체 확정-live 10개**: 2026-07-31 CAN 최적화로 서브시스템별이 아니라 우선도 기준
+  재배치됨 — Speed/DriveMode/DTC/Power/RegenPower는 InvMsg1(0x100, 100ms, 우선도 높음)에,
+  SOC/DClinkVoltage(Pack Voltage)/Temp(Sys Temp)/DriveRange(Range)/Odometer(ODO, 16bit
+  factor5 압축)는 InvMsg2(0x200, 200ms, 우선도 낮음)에 패킹 — `docs/hardware/vehicle.dbc`
+  기준, 화면 바인딩 완료. 인버터측 실물 구현/실기 검증 전이라는 점만 유의(스펙 확정 ≠ 실물 확인)
 - **HARNESS-TODO 3개**: TRIP/Time/Out Temp — `VehicleData_t`에 필드 자체가 없어 여전히 정적
-  `--` (Sys Temp와 혼동 주의: Sys Temp는 Page 3의 `sys_temp_c`, InvMsg1 byte7로 이미
+  `--` (Sys Temp와 혼동 주의: Sys Temp는 Page 3의 `sys_temp_c`, InvMsg2 byte2로 이미
   바인딩되어 있고, Out Temp는 Page 4의 별개 항목으로 CAN 신호 자체가 없음)
 
 인버터 실물이 이 스펙대로 구현되고 실기로 검증되면, `docs/design/can-signals.md`의 상태

@@ -13,8 +13,11 @@ static const char *TAG = "TWAI_TASK";
 // 단, 인버터 쪽 실구현/실기 검증 전이므로 "우리가 정했다" != "실물로 확인됐다".
 // Period(GenMsgCycleTime): InvMsg1=100ms, InvMsg2=200ms — 아직 코드에서 타임아웃/끊김 감지에는
 // 안 쓰고 있음 (HARNESS-TODO: 필요해지면 이 값 기준으로 최종 수신시각 추적 로직 추가).
-#define CAN_ID_INV_MSG1 0x100  // InvMsg1: Speed/DriveMode/DTC/DClinkVoltage/SOC/Temp
-#define CAN_ID_INV_MSG2 0x200  // InvMsg2: DriveRange/RegenPower/Odometer/Power
+// 2026-07-31 CAN 최적화 리비전: 신호를 서브시스템별이 아니라 갱신 우선도 기준으로
+// 재배치함 — InvMsg1=우선도 높음(운전 중 계속 바뀌거나 지연 시 안전 문제),
+// InvMsg2=우선도 낮음(서서히 바뀌는 상태값). docs/hardware/vehicle.dbc CM_ 참고.
+#define CAN_ID_INV_MSG1 0x100  // InvMsg1(100ms): Speed/DriveMode/DTC/Power/RegenPower
+#define CAN_ID_INV_MSG2 0x200  // InvMsg2(200ms): SOC/DClinkVoltage/Temp/DriveRange/Odometer
 
 static bool twai_start_with_retry(void) {
     twai_general_config_t g_config =
@@ -54,28 +57,30 @@ static void handle_rx_message(const twai_message_t *rx_msg) {
 
     switch (rx_msg->identifier) {
         case CAN_ID_INV_MSG1:
-            // cluster.dbc InvMsg1 (BU_ INVERTER->CLUSTER, DLC8, 100ms) 바이트 배치:
-            // byte0=Speed byte1=DriveMode byte2=DTC byte3~4=(예약) byte5=DClinkVoltage
-            // byte6=SOC byte7=Temp — 전부 raw unsigned(@1+), offset은 산술로만 적용(2의 보수 아님)
+            // cluster.dbc InvMsg1 (BU_ INVERTER->CLUSTER, DLC8, 100ms, 우선도 높음) 바이트 배치:
+            // byte0=Speed byte1=DriveMode byte2=DTC byte3=Power byte4=RegenPower byte5~7=(예약)
+            // 전부 raw unsigned(@1+), offset은 산술로만 적용(2의 보수 아님)
             current_data.speed = (int16_t)rx_msg->data[0] - 10;       // factor1, offset-10, [-10|245]
             current_data.drive_mode = rx_msg->data[1];                // VAL_: 0=P 1=R 2=N 3=D
             current_data.dtc_code = rx_msg->data[2];                  // [0|255], 단일 열거값
-            // byte3~4: 예약(미사용)
-            current_data.pack_volt = (float)rx_msg->data[5];          // DClinkVoltage, factor1, [0|80]
-            current_data.soc = rx_msg->data[6];                       // [0|100]
-            current_data.sys_temp_c = (int16_t)rx_msg->data[7] - 20;  // factor1, offset-20, [-20|235]
+            current_data.power_kw = (float)rx_msg->data[3];           // factor1, [0|255]kW
+            current_data.regen_kw = (float)rx_msg->data[4];           // factor1, [0|255]kW
+            // byte5~7: 예약(미사용)
             break;
-        case CAN_ID_INV_MSG2:
-            // cluster.dbc InvMsg2 (BU_ INVERTER->CLUSTER, DLC8, 200ms) 바이트 배치:
-            // byte0=DriveRange byte1=RegenPower byte2~4=Odometer(24bit LE) byte5=Power byte6~7=(예약)
-            current_data.range_km = rx_msg->data[0];                  // [0|255]km
-            current_data.regen_kw = (float)rx_msg->data[1];           // factor1, [0|255]kW
-            current_data.odo_km = (uint32_t)rx_msg->data[2] |
-                                  ((uint32_t)rx_msg->data[3] << 8) |
-                                  ((uint32_t)rx_msg->data[4] << 16);   // [0|16777215]km
-            current_data.power_kw = (float)rx_msg->data[5];           // factor1, [0|255]kW
+        case CAN_ID_INV_MSG2: {
+            // cluster.dbc InvMsg2 (BU_ INVERTER->CLUSTER, DLC8, 200ms, 우선도 낮음) 바이트 배치:
+            // byte0=SOC byte1=DClinkVoltage byte2=Temp byte3=DriveRange byte4~5=Odometer(16bit LE) byte6~7=(예약)
+            current_data.soc = rx_msg->data[0];                       // [0|100]
+            current_data.pack_volt = (float)rx_msg->data[1];          // DClinkVoltage, factor1, [0|80]
+            current_data.sys_temp_c = (int16_t)rx_msg->data[2] - 20;  // factor1, offset-20, [-20|235]
+            current_data.range_km = rx_msg->data[3];                  // [0|255]km
+            // Odometer: 2026-07-31 CAN 최적화로 24bit(factor1)->16bit(factor5) 압축,
+            // raw 최대 65535 * 5 = 327,675km까지 커버 (실사용 상한 30만km 기준)
+            uint16_t odo_raw = (uint16_t)(rx_msg->data[4] | (rx_msg->data[5] << 8));
+            current_data.odo_km = (uint32_t)odo_raw * 5;              // factor5, [0|327675]km
             // byte6~7: 예약(미사용)
             break;
+        }
         default:
             // 정의 안 된 ID는 조용히 무시 (디버깅 시엔 아래 주석 해제)
             // ESP_LOGD(TAG, "미처리 CAN ID: 0x%03lX", rx_msg->identifier);

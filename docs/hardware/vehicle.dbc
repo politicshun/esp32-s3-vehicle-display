@@ -37,16 +37,16 @@ BU_: CLUSTER INVERTER
 
 
 BO_ 512 InvMsg2: 8 INVERTER
- SG_ Power : 40|8@1+ (1,0) [0|255] "kW"  CLUSTER
- SG_ RegenPower : 8|8@1+ (1,0) [0|255] "kW"  CLUSTER
- SG_ Odometer : 16|24@1+ (1,0) [0|16777215] ""  CLUSTER
- SG_ DriveRange : 0|8@1+ (1,0) [0|255] "km"  CLUSTER
+ SG_ Odometer : 32|16@1+ (5,0) [0|327675] "km"  CLUSTER
+ SG_ DriveRange : 24|8@1+ (1,0) [0|255] "km"  CLUSTER
+ SG_ Temp : 16|8@1+ (1,-20) [-20|235] "degC"  CLUSTER
+ SG_ DClinkVoltage : 8|8@1+ (1,0) [0|80] "V"  CLUSTER
+ SG_ SOC : 0|8@1+ (1,0) [0|100] "%"  CLUSTER
 
 BO_ 256 InvMsg1: 8 INVERTER
+ SG_ RegenPower : 32|8@1+ (1,0) [0|255] "kW"  CLUSTER
+ SG_ Power : 24|8@1+ (1,0) [0|255] "kW"  CLUSTER
  SG_ DTC : 16|8@1+ (1,0) [0|255] ""  CLUSTER
- SG_ Temp : 56|8@1+ (1,-20) [-20|235] "degC"  CLUSTER
- SG_ SOC : 48|8@1+ (1,0) [0|100] "%"  CLUSTER
- SG_ DClinkVoltage : 40|8@1+ (1,0) [0|80] "V"  CLUSTER
  SG_ DriveMode : 8|8@1+ (1,0) [0|3] ""  CLUSTER
  SG_ Speed : 0|8@1+ (1,-10) [-10|245] "km/h"  CLUSTER
 
@@ -95,7 +95,7 @@ BA_DEF_DEF_  "GenSigStartValue" 0;
 BA_ "BusType" "CAN";
 BA_ "GenMsgCycleTime" BO_ 512 200;
 BA_ "GenMsgCycleTime" BO_ 256 100;
-BA_ "GenSigStartValue" SG_ 256 Temp 20;
+BA_ "GenSigStartValue" SG_ 512 Temp 20;
 BA_ "GenSigStartValue" SG_ 256 Speed 10;
 VAL_ 256 DriveMode 0 "P" 1 "R" 2 "N" 3 "D" ;
 
@@ -103,12 +103,19 @@ CM_ "2026-07-31: 차량단(인버터) 설계가 아직 끝나지 않아, 이 프
 정하고 인버터 쪽이 여기 맞추기로 함(사용자 확인) — 즉 이 파일은 더 이상 '실차값 추측'이
 아니라 저희가 직접 정의한 스펙이다. Desktop의 cluster.dbc가 원본이고 이 파일은 그 사본
 (main/twai.c/vehicle_data.h를 이 파일 기준으로 맞춤). InvMsg1(0x100)/InvMsg2(0x200)
-2개 메시지에 10개 신호를 패킹했다 (이전 리비전엔 신호당 메시지 1개씩 총 10개 ID를 썼음).
-Reserved 바이트(InvMsg1의 byte3~4, InvMsg2의 byte6~7)는 DBC 문법상 signal 없인 표현이
-안 돼 이 파일엔 안 보이지만 실제로 비어있다 — main/twai.c 주석 참고. 인버터 쪽 실물
-구현/실기 검증 전이므로 '스펙을 정했다' != '실물로 확인됐다'는 여전히 유효하다.";
-CM_ BO_ 256 "Speed/DriveMode처럼 빠르게 갱신돼야 하는 값과 SOC/Temp/DTC/DClinkVoltage처럼
-느려도 되는 값이 한 메시지에 섞여있어, GenMsgCycleTime을 더 빠른 쪽(Speed) 기준인
-100ms로 잡음.";
-CM_ BO_ 512 "DriveRange/RegenPower/Odometer/Power — InvMsg1보다 느리게 변하는 값들이라
-GenMsgCycleTime 200ms.";
+2개 메시지에 10개 신호를 패킹했다. 인버터 쪽 실물 구현/실기 검증 전이므로
+'스펙을 정했다' != '실물로 확인됐다'는 여전히 유효하다.
+
+2026-07-31 CAN 최적화 리비전: (1) Odometer를 24bit(factor1, 최대 16,777,215km)에서
+16bit(factor5, 최대 327,675km)로 압축 — 실사용 상한을 약 30만km로 보고, 5km 해상도면
+그 안에서 1바이트를 절약할 수 있어서(16bit가 이 해상도에서 맞출 수 있는 가장 촘촘한
+바이트 정렬 폭). (2) 신호를 서브시스템별(주행/배터리)이 아니라 갱신 우선도 기준으로
+InvMsg1(0x100, 100ms)/InvMsg2(0x200, 200ms)에 재배치: InvMsg1 = 운전 중 계속 바뀌거나
+지연되면 안전에 영향(Speed/DriveMode/DTC/Power/RegenPower), InvMsg2 = 서서히 바뀌는
+상태값(SOC/DClinkVoltage/Temp/DriveRange/Odometer). Reserved 바이트(InvMsg1의 byte5~7,
+InvMsg2의 byte6~7)는 DBC 문법상 signal 없인 표현이 안 돼 이 파일엔 안 보이지만 실제로
+비어있다 — main/twai.c 주석 참고.";
+CM_ BO_ 256 "우선도 높음 그룹: Speed/DriveMode/DTC(안전 관련, 지연 시 문제 큼)와
+Power/RegenPower(운전 중 계속 변하는 실시간 값)를 묶어서 빠른 주기(100ms)로 전송.";
+CM_ BO_ 512 "우선도 낮음 그룹: SOC/DClinkVoltage/Temp/DriveRange/Odometer — 전부 서서히
+바뀌는 상태값이라 200ms 주기로 충분. Odometer는 factor=5(5km 해상도)로 16bit에 압축.";
