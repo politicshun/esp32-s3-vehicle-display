@@ -1,6 +1,7 @@
 #include "ble.h"
 #include "vehicle_data.h"
 #include "esp_log.h"
+#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -32,6 +33,13 @@ static const ble_uuid128_t vehicle_chr_uuid =
 /* 전방 선언: ble_app_advertise()에서 정의보다 먼저 참조되므로 필요 */
 int ble_gap_event(struct ble_gap_event *event, void *arg);
 
+/* ---- VehicleData_t -> 사람이 읽을 수 있는 ASCII 텍스트 (nRF Connect 등에서 hex 대신
+ * "UTF-8 String" 보기로 바로 실측값 확인용). speed는 int16_t(음수=후진)라 %d로 부호 보존. ---- */
+static int format_vehicle_text(char *buf, size_t buf_size, const VehicleData_t *d) {
+    return snprintf(buf, buf_size, "SPD:%dkm/h SOC:%u%% VOLT:%.1fV DTC:%u",
+                     (int)d->speed, (unsigned)d->soc, d->pack_volt, (unsigned)d->dtc_code);
+}
+
 /* ---- GATT characteristic access 콜백 (스마트폰이 Read 요청 시) ---- */
 static int vehicle_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
                                   struct ble_gatt_access_ctxt *ctxt, void *arg) {
@@ -42,14 +50,10 @@ static int vehicle_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     VehicleData_t data;
     vehicle_data_get(&data);
 
-    VehicleBlePacket_t pkt = {
-        .speed = data.speed,
-        .soc = data.soc,
-        .pack_volt = data.pack_volt,
-        .dtc_code = data.dtc_code,
-    };
+    char text[BLE_VEHICLE_TEXT_BUF_LEN];
+    int len = format_vehicle_text(text, sizeof(text), &data);
 
-    int rc = os_mbuf_append(ctxt->om, &pkt, sizeof(pkt));
+    int rc = os_mbuf_append(ctxt->om, text, len);
     return (rc == 0) ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 
@@ -179,6 +183,12 @@ void ble_init(void) {
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
 
+    /* 2026-07-31: Notify는 협상된 ATT MTU를 넘는 바이트를 자르고 마는데(Read처럼 blob으로
+     * 이어받는 재조립이 없음), 기본 MTU(23바이트=페이로드 20바이트)로는 format_vehicle_text()
+     * 텍스트가 다 안 들어가서 "VOL"까지만 오는 게 실기기에서 확인됨. 서버(우리)가 먼저 더 큰
+     * MTU를 선호값으로 걸어두면 연결 시 그 값으로 협상을 유도할 수 있다(연결 전에 호출 필요). */
+    ble_att_set_preferred_mtu(247);
+
     ble_svc_gap_init();
     ble_svc_gatt_init();
     ble_svc_gap_device_name_set("ESP32S3-Cluster");
@@ -208,14 +218,10 @@ void ble_sync_task(void *pvParameters) {
         vehicle_data_get(&data);
 
         if (data.ble_connected && g_ble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-            VehicleBlePacket_t pkt = {
-                .speed = data.speed,
-                .soc = data.soc,
-                .pack_volt = data.pack_volt,
-                .dtc_code = data.dtc_code,
-            };
+            char text[BLE_VEHICLE_TEXT_BUF_LEN];
+            int len = format_vehicle_text(text, sizeof(text), &data);
 
-            struct os_mbuf *om = ble_hs_mbuf_from_flat(&pkt, sizeof(pkt));
+            struct os_mbuf *om = ble_hs_mbuf_from_flat(text, len);
             if (om != NULL) {
                 int rc = ble_gatts_notify_custom(g_ble_conn_handle,
                                                   g_vehicle_chr_val_handle, om);
