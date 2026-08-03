@@ -1,7 +1,10 @@
 # docs/design/ble-gatt.md
 
 - 기기명: "ESP32S3-Cluster"
-- Service UUID / Characteristic UUID: `ble.c`의 placeholder 128bit UUID — **HARNESS-TODO: 양산 전 재발급 필요**
+- Service UUID / Characteristic UUID (2026-08-03 재발급 완료, `main/ble.c`):
+  - Service: `d8be14dc-6df4-4aae-9750-65c274746c87`
+  - Characteristic (vehicle data, Read+Notify): `95896bdd-d3b1-4f4b-b7b7-9dd2876e5c7c`
+  - 앱 팀에는 위 문자열 그대로(하이픈 포함, 대소문자 무관) 전달. 이전 placeholder UUID(`0x2f,0x1a,0x9e,...`)는 폐기.
 - Characteristic 권한: Read + Notify. **암호화/페어링 미적용** (개발 단계 임시, `BLE_GAP_CONN_MODE_UND`로 전체 개방)
 - Payload (2026-07-31 변경): **ASCII 텍스트** — `"SPD:%dkm/h SOC:%u%% VOLT:%.1fV DTC:%u"`
   (`format_vehicle_text()`, `main/ble.c`). nRF Connect 등 범용 BLE 스캐너 앱으로 테스트하기로

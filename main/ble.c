@@ -20,15 +20,20 @@ uint16_t g_ble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 uint16_t g_vehicle_chr_val_handle = 0;
 
 /* ---- 이 프로젝트 전용 커스텀 UUID ----
- * 임의로 생성한 128bit UUID입니다. 실제 배포 전에는
- * uuidgenerator.net 등에서 새로 생성해서 교체하세요. */
+ * 2026-08-03 양산용으로 재발급(OS 난수 생성, `[guid]::NewGuid()`) —
+ * 이전 placeholder(0x2f,0x1a,0x9e,...)는 폐기.
+ * Service UUID: d8be14dc-6df4-4aae-9750-65c274746c87
+ * Char    UUID: 95896bdd-d3b1-4f4b-b7b7-9dd2876e5c7c
+ * (BLE_UUID128_INIT의 바이트 순서는 문자열 표기의 역순 — 참고: ble_uuid_to_str()
+ *  구현이 value[15..0] 순으로 출력함, esp-idf/.../host/ble_uuid.c)
+ * 앱 팀에는 위 하이픈 표기 UUID 문자열 그대로 전달하면 됨(docs/design/ble-gatt.md 참고). */
 static const ble_uuid128_t vehicle_svc_uuid =
-    BLE_UUID128_INIT(0x2f, 0x1a, 0x9e, 0x40, 0x8b, 0x2c, 0x4d, 0x91,
-                      0xa5, 0x3e, 0x00, 0x11, 0x00, 0xff, 0x00, 0x01);
+    BLE_UUID128_INIT(0x87, 0x6c, 0x74, 0x74, 0xc2, 0x65, 0x50, 0x97,
+                      0xae, 0x4a, 0xf4, 0x6d, 0xdc, 0x14, 0xbe, 0xd8);
 
 static const ble_uuid128_t vehicle_chr_uuid =
-    BLE_UUID128_INIT(0x2f, 0x1a, 0x9e, 0x40, 0x8b, 0x2c, 0x4d, 0x91,
-                      0xa5, 0x3e, 0x00, 0x11, 0x00, 0xff, 0x00, 0x02);
+    BLE_UUID128_INIT(0x7c, 0x5c, 0x6e, 0x87, 0xd2, 0x9d, 0xb7, 0xb7,
+                      0x4b, 0x4f, 0xb1, 0xd3, 0xdd, 0x6b, 0x89, 0x95);
 
 /* 전방 선언: ble_app_advertise()에서 정의보다 먼저 참조되므로 필요 */
 int ble_gap_event(struct ble_gap_event *event, void *arg);
