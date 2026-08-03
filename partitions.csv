@@ -1,4 +1,4 @@
-# Name,   Type, SubType, Offset,  Size, Flags
+﻿# Name,   Type, SubType, Offset,  Size, Flags
 # 8MB 플래시 칩 기준 커스텀 파티션 테이블 (docs/design/ui-layout.md 참고).
 # 기본 제공 partitions_singleapp.csv는 factory 앱에 1M만 할당해 UI 이미지 에셋을
 # 조금만 추가해도 꽉 차버림(2026-07-30, 17% 여유 확인). 8MB 중 실제로 쓰는 건
