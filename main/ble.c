@@ -14,6 +14,13 @@
 
 static const char *TAG = "BLE";
 
+/* 2026-08-03: 실기기 hex 확인 중 17바이트가 아니라 18바이트로 보인다는 제보가 있어 컴파일
+ * 타임에 검증 — 통과함(펌웨어 struct는 정확히 17바이트, __attribute__((packed))가 의도대로
+ * 동작). 즉 그 여분 바이트는 펌웨어가 아니라 폰/스캐너 앱 쪽 표시 문제. 앞으로 필드를
+ * 추가/변경할 때 docs/design/ble-gatt.md의 크기 표기를 깜빡하고 안 고치는 걸 막기 위해
+ * 영구 가드로 남겨둔다 — 값이 바뀌면 이 줄도 같이 고치고 문서도 갱신할 것. */
+_Static_assert(sizeof(VehicleBlePacket_t) == 17, "VehicleBlePacket_t 크기가 17바이트가 아님 - docs/design/ble-gatt.md도 같이 갱신할 것");
+
 /* ---- 외부(ble.h)에 노출되는 전역 상태 ---- */
 uint16_t g_ble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 uint16_t g_vehicle_chr_val_handle = 0;
