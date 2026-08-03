@@ -1,18 +1,54 @@
 # docs/design/ble-gatt.md
 
-- 기기명: "ESP32S3-Cluster"
+앱 팀(BLE 컴패니언 앱) 핸드오프 스펙. 진행 상황에 따라 계속 갱신함 — 하단 "핸드오프 진행 현황" 참고.
+
+## GATT 프로파일
+
+- 기기명(advertising name): `"ESP32S3-Cluster"`
 - Service UUID / Characteristic UUID (2026-08-03 재발급 완료, `main/ble.c`):
   - Service: `d8be14dc-6df4-4aae-9750-65c274746c87`
   - Characteristic (vehicle data, Read+Notify): `95896bdd-d3b1-4f4b-b7b7-9dd2876e5c7c`
   - 앱 팀에는 위 문자열 그대로(하이픈 포함, 대소문자 무관) 전달. 이전 placeholder UUID(`0x2f,0x1a,0x9e,...`)는 폐기.
-- Characteristic 권한: Read + Notify. **암호화/페어링 미적용** (개발 단계 임시, `BLE_GAP_CONN_MODE_UND`로 전체 개방)
-- Payload (2026-07-31 변경): **ASCII 텍스트** — `"SPD:%dkm/h SOC:%u%% VOLT:%.1fV DTC:%u"`
-  (`format_vehicle_text()`, `main/ble.c`). nRF Connect 등 범용 BLE 스캐너 앱으로 테스트하기로
-  해서(사용자 확인), packed 바이너리(`VehicleBlePacket_t`, 이전 리비전) 대신 사람이 바로 읽는
-  텍스트로 바꿈 — 스캐너 앱에서 hex 대신 "UTF-8 String" 보기로 확인. speed는 `int16_t`라 `%d`로
-  부호(후진 음수) 보존.
-  - 아직 drive_mode/odo_km/range_km/power_kw/regen_kw/sys_temp_c는 텍스트에 안 실림 —
-    CAN 스펙 확장(`docs/design/can-signals.md`) 이후 BLE 쪽 반영은 다음 단계(HARNESS-TODO)
-  - 커스텀 스마트폰 앱을 만드는 단계가 되면 다시 packed 바이너리(또는 JSON)로 바꾸는 걸
-    검토할 것 — 지금 텍스트 포맷은 사람이 눈으로 확인하는 테스트 단계 전용
-- 연결 상태는 `vehicle_data.ble_connected`에 반영, notify 주기 500ms
+- Characteristic 권한: Read + Notify (Write 없음 — 앱→차량 방향 커맨드는 아직 요구사항 없음)
+- Notify 주기: 500ms 고정 (`main/ble.c` `ble_sync_task`)
+- 연결 상태는 `vehicle_data.ble_connected`에 반영
+- 선호 MTU: 247 (`ble_att_set_preferred_mtu`) — 협상 실패 시 기본 23바이트(페이로드 20바이트)로 폴백되지만
+  현재 payload(18바이트)는 기본 MTU로도 들어감. 향후 필드 추가 여지를 위해 큰 MTU를 유지.
+
+## Payload 포맷 (2026-08-03 확정 — packed 바이너리)
+
+`VehicleBlePacket_t` (`main/include/ble.h`), `__attribute__((packed))`, **little-endian**
+(ESP32 네이티브 바이트오더 — 앱 파서에서 명시적으로 little-endian으로 디코드할 것).
+총 18바이트.
+
+| Offset | 필드 | 타입 | 단위/범위 | 비고 |
+|---|---|---|---|---|
+| 0 | proto_version | uint8 | `BLE_PROTOCOL_VERSION`(현재 1) | payload 필드 추가/변경 시 증가. 앱은 이 값으로 구버전 펌웨어 구분 |
+| 1-2 | speed | int16 | km/h, [-10\|245] | 음수 = 후진 |
+| 3 | soc | uint8 | %, [0\|100] | 배터리 잔량 |
+| 4 | pack_volt | uint8 | V, [0\|80] | DC 링크 전압, 정수 해상도 |
+| 5 | dtc_code | uint8 | [0\|255] | 고장 코드(단일 열거값, 비트마스크 아님). **코드값→의미 매핑 미확정 — HARNESS-TODO, 아래 "핸드오프 진행 현황" 참고** |
+| 6 | drive_mode | uint8 | [0\|3] | 0=P 1=R 2=N 3=D |
+| 7-10 | odo_km | uint32 | km | 누적 주행거리(이미 실제값, CAN 압축 해제된 값) |
+| 11-12 | range_km | uint16 | km | 예상 주행가능거리 |
+| 13 | power_kw | uint8 | kW, [0\|255] | 실시간 출력, 정수 해상도 |
+| 14 | regen_kw | uint8 | kW, [0\|255] | 회생제동 출력, 정수 해상도 |
+| 15-16 | sys_temp_c | int16 | degC | 시스템 온도 |
+
+이전 리비전(2026-07-31, ASCII 텍스트 `"SPD:%dkm/h SOC:%u%% VOLT:%.1fV DTC:%u"`)은 nRF Connect 등
+범용 스캐너 앱으로 테스트하던 단계 전용이었고 폐기됨. 그 텍스트에는 drive_mode/odo_km/range_km/
+power_kw/regen_kw/sys_temp_c가 빠져있었는데, 이번 바이너리 전환에서 전부 포함시킴.
+
+## 페어링/보안
+
+**아직 미적용** — `BLE_GAP_CONN_MODE_UND`로 전체 개방, 암호화/본딩 없음. 제품 정책 확정 전까지는
+아무 폰이나 연결/구독 가능한 상태. HARNESS-TODO(진행 현황 참고).
+
+## 핸드오프 진행 현황 (2026-08-03 기준)
+
+| 항목 | 상태 |
+|---|---|
+| Service/Characteristic UUID 재발급 | ✅ 완료 |
+| Payload 포맷 확정(바이너리) | ✅ 완료 |
+| dtc_code 코드값→의미 매핑 | ⬜ 미확정 — 실차/인버터 스펙에 없어 **사용자 확인 필요** |
+| 페어링/보안 정책 | ⬜ 미확정 |

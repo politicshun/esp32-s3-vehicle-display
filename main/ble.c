@@ -1,7 +1,6 @@
 #include "ble.h"
 #include "vehicle_data.h"
 #include "esp_log.h"
-#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -38,11 +37,19 @@ static const ble_uuid128_t vehicle_chr_uuid =
 /* 전방 선언: ble_app_advertise()에서 정의보다 먼저 참조되므로 필요 */
 int ble_gap_event(struct ble_gap_event *event, void *arg);
 
-/* ---- VehicleData_t -> 사람이 읽을 수 있는 ASCII 텍스트 (nRF Connect 등에서 hex 대신
- * "UTF-8 String" 보기로 바로 실측값 확인용). speed는 int16_t(음수=후진)라 %d로 부호 보존. ---- */
-static int format_vehicle_text(char *buf, size_t buf_size, const VehicleData_t *d) {
-    return snprintf(buf, buf_size, "SPD:%dkm/h SOC:%u%% VOLT:%.1fV DTC:%u",
-                     (int)d->speed, (unsigned)d->soc, d->pack_volt, (unsigned)d->dtc_code);
+/* ---- VehicleData_t -> BLE 전송용 packed 바이너리(VehicleBlePacket_t, ble.h 참고) ---- */
+static void build_vehicle_packet(VehicleBlePacket_t *pkt, const VehicleData_t *d) {
+    pkt->proto_version = BLE_PROTOCOL_VERSION;
+    pkt->speed = d->speed;
+    pkt->soc = d->soc;
+    pkt->pack_volt = (uint8_t)d->pack_volt;
+    pkt->dtc_code = d->dtc_code;
+    pkt->drive_mode = d->drive_mode;
+    pkt->odo_km = d->odo_km;
+    pkt->range_km = d->range_km;
+    pkt->power_kw = (uint8_t)d->power_kw;
+    pkt->regen_kw = (uint8_t)d->regen_kw;
+    pkt->sys_temp_c = d->sys_temp_c;
 }
 
 /* ---- GATT characteristic access 콜백 (스마트폰이 Read 요청 시) ---- */
@@ -55,10 +62,10 @@ static int vehicle_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     VehicleData_t data;
     vehicle_data_get(&data);
 
-    char text[BLE_VEHICLE_TEXT_BUF_LEN];
-    int len = format_vehicle_text(text, sizeof(text), &data);
+    VehicleBlePacket_t pkt;
+    build_vehicle_packet(&pkt, &data);
 
-    int rc = os_mbuf_append(ctxt->om, text, len);
+    int rc = os_mbuf_append(ctxt->om, &pkt, sizeof(pkt));
     return (rc == 0) ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 
@@ -189,9 +196,10 @@ void ble_init(void) {
     ble_hs_cfg.reset_cb = on_reset;
 
     /* 2026-07-31: Notify는 협상된 ATT MTU를 넘는 바이트를 자르고 마는데(Read처럼 blob으로
-     * 이어받는 재조립이 없음), 기본 MTU(23바이트=페이로드 20바이트)로는 format_vehicle_text()
-     * 텍스트가 다 안 들어가서 "VOL"까지만 오는 게 실기기에서 확인됨. 서버(우리)가 먼저 더 큰
-     * MTU를 선호값으로 걸어두면 연결 시 그 값으로 협상을 유도할 수 있다(연결 전에 호출 필요). */
+     * 이어받는 재조립이 없음) — 텍스트 payload 시절 기본 MTU(23바이트=페이로드 20바이트)에서
+     * 잘림이 실기기에서 확인된 적이 있음. 2026-08-03 바이너리 전환 후 VehicleBlePacket_t가
+     * 18바이트라 기본 MTU로도 들어가지만, 향후 필드 추가 여지를 위해 선호 MTU는 그대로 둔다
+     * (연결 전에 호출 필요). */
     ble_att_set_preferred_mtu(247);
 
     ble_svc_gap_init();
@@ -223,10 +231,10 @@ void ble_sync_task(void *pvParameters) {
         vehicle_data_get(&data);
 
         if (data.ble_connected && g_ble_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-            char text[BLE_VEHICLE_TEXT_BUF_LEN];
-            int len = format_vehicle_text(text, sizeof(text), &data);
+            VehicleBlePacket_t pkt;
+            build_vehicle_packet(&pkt, &data);
 
-            struct os_mbuf *om = ble_hs_mbuf_from_flat(text, len);
+            struct os_mbuf *om = ble_hs_mbuf_from_flat(&pkt, sizeof(pkt));
             if (om != NULL) {
                 int rc = ble_gatts_notify_custom(g_ble_conn_handle,
                                                   g_vehicle_chr_val_handle, om);
