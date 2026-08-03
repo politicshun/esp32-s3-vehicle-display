@@ -13,13 +13,13 @@
 - Notify 주기: 500ms 고정 (`main/ble.c` `ble_sync_task`)
 - 연결 상태는 `vehicle_data.ble_connected`에 반영
 - 선호 MTU: 247 (`ble_att_set_preferred_mtu`) — 협상 실패 시 기본 23바이트(페이로드 20바이트)로 폴백되지만
-  현재 payload(18바이트)는 기본 MTU로도 들어감. 향후 필드 추가 여지를 위해 큰 MTU를 유지.
+  현재 payload(17바이트)는 기본 MTU로도 들어감. 향후 필드 추가 여지를 위해 큰 MTU를 유지.
 
 ## Payload 포맷 (2026-08-03 확정 — packed 바이너리)
 
 `VehicleBlePacket_t` (`main/include/ble.h`), `__attribute__((packed))`, **little-endian**
 (ESP32 네이티브 바이트오더 — 앱 파서에서 명시적으로 little-endian으로 디코드할 것).
-총 18바이트.
+총 17바이트.
 
 | Offset | 필드 | 타입 | 단위/범위 | 비고 |
 |---|---|---|---|---|
