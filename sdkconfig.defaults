@@ -11,6 +11,15 @@ CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
 CONFIG_BT_BLUEDROID_ENABLED=n
 
+# --- BLE Just Works bonding (2026-08-03, 사용자 확인) ---
+# NVS_PERSIST: 페어링 키를 NVS에 저장해서 재부팅 후에도 재연결 시 재페어링 불필요하게 함
+#   (main/main.c에서 ble_init() 전에 nvs_flash_init() 호출 필요 — 실제로 추가함).
+# HANDLE_REPEAT_PAIRING_DELETION: 폰이 기존 본딩을 잃어버리고 재페어링을 시도하는 경우
+#   (앱 재설치, 블루투스 설정 초기화 등) 스택이 자동으로 기존 키 삭제 후 재페어링을 진행하게 함
+#   — 꺼두면 BLE_GAP_EVENT_REPEAT_PAIRING을 앱이 직접 처리해야 하는데 아직 그 핸들러가 없음.
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+CONFIG_BT_NIMBLE_HANDLE_REPEAT_PAIRING_DELETION=y
+
 # --- Flash size (ESP32-S3-WROOM-1-N8R8, 8MB Flash) ---
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
 

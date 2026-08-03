@@ -1,6 +1,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
 #include "vehicle_data.h"
 #include "ble.h"
 
@@ -13,6 +14,15 @@ static const char *TAG = "MAIN";
 
 void app_main(void) {
     ESP_LOGI(TAG, "Starting ESP32-S3 Multi-Core Vehicle Display System...");
+
+    // 2026-08-03: BLE Just Works bonding 키를 NVS에 저장(CONFIG_BT_NIMBLE_NVS_PERSIST=y)하려면
+    // ble_init()보다 먼저 NVS가 초기화돼 있어야 함.
+    esp_err_t nvs_ret = nvs_flash_init();
+    if (nvs_ret == ESP_ERR_NVS_NO_FREE_PAGES || nvs_ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        nvs_ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(nvs_ret);
 
     // BSP HW data sharing & Mutex initialization
     bsp_hardware_init();

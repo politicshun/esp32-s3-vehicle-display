@@ -14,11 +14,12 @@ idf_component_register(
         "include"
         "."
         "ui"
-    REQUIRES 
+    REQUIRES
         freertos
-        driver 
+        driver
         esp_driver_twai
-        esp_lcd 
-        lvgl 
+        esp_lcd
+        lvgl
         bt
+        nvs_flash
 )

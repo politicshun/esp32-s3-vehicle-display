@@ -79,7 +79,10 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                 .uuid = &vehicle_chr_uuid.u,
                 .access_cb = vehicle_chr_access_cb,
                 .val_handle = &g_vehicle_chr_val_handle,
-                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+                /* 2026-08-03: Just Works bonding 적용(사용자 확인) — Read/Notify 모두 암호화된
+                 * 링크에서만 허용(_ENC 플래그). MITM 인증까지는 요구하지 않음(Just Works 특성). */
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY |
+                         BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,
             },
             {0} /* 배열 종료 마커 */
         },
@@ -194,6 +197,19 @@ void ble_init(void) {
 
     ble_hs_cfg.sync_cb = on_sync;
     ble_hs_cfg.reset_cb = on_reset;
+
+    /* 2026-08-03: Just Works bonding 적용(사용자 확인) — PIN 입력 없이 자동 암호화+본딩,
+     * 재연결 시 재페어링 불필요. MITM 보호는 없음(Just Works 특성상 중간자 공격에는 원천적으로
+     * 취약 — sm_io_cap이 입출력 수단 없음이라 다른 방식(Passkey/Numeric Comparison) 자체가
+     * 불가능함). 차량 클러스터-폰 컴패니언 앱 유스케이스에서 흔히 쓰이는 수준의 보안. */
+    ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT; /* Just Works 강제 */
+    ble_hs_cfg.sm_bonding = 1;   /* 페어링 키 저장 -> 재연결 시 재페어링 불필요 */
+    ble_hs_cfg.sm_mitm = 0;      /* Just Works: MITM 보호 없음 */
+    ble_hs_cfg.sm_sc = 1;        /* LE Secure Connections 우선(레거시보다 안전), 미지원 상대는 legacy 폴백 */
+    ble_hs_cfg.sm_sc_only = 0;
+    ble_hs_cfg.sm_sec_lvl = 2;   /* Unauthenticated pairing with encryption (Just Works에 해당하는 레벨) */
+    ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
     /* 2026-07-31: Notify는 협상된 ATT MTU를 넘는 바이트를 자르고 마는데(Read처럼 blob으로
      * 이어받는 재조립이 없음) — 텍스트 payload 시절 기본 MTU(23바이트=페이로드 20바이트)에서
