@@ -32,7 +32,7 @@ extern uint16_t g_vehicle_chr_val_handle;
  *      (다른 아키텍처/컴파일러)에서 struct 크기·정렬이 달라질 수 있음
  *   2) float 대신 고정폭 정수만 사용 — pack_volt/power_kw/regen_kw는 CAN 스펙상
  *      원래 정수 해상도(factor1)라 정밀도 손실 없이 uint8_t로 충분함
- *      (docs/hardware/vehicle.dbc, main/twai.c 참고)
+ *      (docs/hardware/cluster.dbc, main/twai.c 참고)
  *   3) ble_connected는 내부 상태값이라 무선으로 보낼 필요 없음
  *   4) drive_mode/odo_km/range_km/power_kw/regen_kw/sys_temp_c는 이전 텍스트
  *      포맷에 빠져있었는데(HARNESS-TODO였음), 이번에 전부 포함시킴

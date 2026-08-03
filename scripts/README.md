@@ -11,7 +11,7 @@
 | `spec_conformance.py` | `main/*.c`가 참조하는 `CH422G_EXIO_*`/`*_GPIO_NUM` 매크로가 실제로 `pin_config.h`에 정의돼 있는지 대조 — 지어낸 매크로 이름을 컴파일 전에 잡아낸다. `verify.ps1`(빌드 게이트) 1단계로 자동 실행됨 | Python 3 (표준 라이브러리만) |
 | `gen_glow_image.py` | 게이지 뒤에 까는 정적 글로우 배경(64×64 RGB565)을 생성해서 `main/ui/ui_glow_*.c`로 구움 | Python 3 + `Pillow`(`pip install Pillow`) |
 | `extract_korean_chars.py` | (레거시) 한글 서브셋 폰트를 만들려고 `ui.c`에서 실제 쓰인 한글 글자만 추출하던 도구. 한글 UI 시도 자체가 실기기에서 안 돼서 영문으로 전환하며 폐기된 접근이라(`docs/design/ui-layout.md` "UI 표시 언어" 항목 참고) 지금은 안 쓰지만, 나중에 한글을 다시 시도할 일이 있으면 참고용으로 남겨둠 | Python 3 |
-| `can_sim_kvaser.py` | KVASER 실물 어댑터로 `docs/hardware/vehicle.dbc` 기준 InvMsg1/InvMsg2를 실제 구동 사이클(정차→가속→순항→감속→후진)처럼 값이 계속 변하게 전송하는 벤치 테스트 시뮬레이터. CANKing의 Generator는 고정값 반복 전송만 되고 시간에 따라 값이 변하는 시뮬레이션은 못 해서 만듦(2026-07-31) | Python 3 + `pip install cantools python-can` + Kvaser 드라이버(`canlib32.dll`, CANKing 설치 시 같이 깔림) |
+| `can_sim_kvaser.py` | KVASER 실물 어댑터로 `docs/hardware/cluster.dbc` 기준 InvMsg1/InvMsg2를 실제 구동 사이클(정차→가속→순항→감속→후진)처럼 값이 계속 변하게 전송하는 벤치 테스트 시뮬레이터. CANKing의 Generator는 고정값 반복 전송만 되고 시간에 따라 값이 변하는 시뮬레이션은 못 해서 만듦(2026-07-31) | Python 3 + `pip install cantools python-can` + Kvaser 드라이버(`canlib32.dll`, CANKing 설치 시 같이 깔림) |
 
 `main/`(펌웨어)이나 `docs/`(설계 문서)와 달리 이 폴더는 빌드 게이트(`verify.ps1`)
 대상이 아니고, CLAUDE.md의 "코드 생성 전 체크리스트"도 이 폴더 자체에는 적용 안 됨

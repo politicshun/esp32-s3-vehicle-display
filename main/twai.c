@@ -8,14 +8,14 @@
 static const char *TAG = "TWAI_TASK";
 
 // 2026-07-31: 차량단(인버터) 설계가 아직 안 끝나서, 이 프로젝트가 CAN 스펙을 먼저 정하고
-// 인버터 쪽이 거기 맞추기로 함 — 아래는 "실차값 추측"이 아니라 docs/hardware/vehicle.dbc
+// 인버터 쪽이 거기 맞추기로 함 — 아래는 "실차값 추측"이 아니라 docs/hardware/cluster.dbc
 // (=Desktop cluster.dbc 최종본, GenMsgCycleTime/VAL_ 포함)에 우리가 직접 정의한 스펙이다.
 // 단, 인버터 쪽 실구현/실기 검증 전이므로 "우리가 정했다" != "실물로 확인됐다".
 // Period(GenMsgCycleTime): InvMsg1=100ms, InvMsg2=200ms — 아직 코드에서 타임아웃/끊김 감지에는
 // 안 쓰고 있음 (HARNESS-TODO: 필요해지면 이 값 기준으로 최종 수신시각 추적 로직 추가).
 // 2026-07-31 CAN 최적화 리비전: 신호를 서브시스템별이 아니라 갱신 우선도 기준으로
 // 재배치함 — InvMsg1=우선도 높음(운전 중 계속 바뀌거나 지연 시 안전 문제),
-// InvMsg2=우선도 낮음(서서히 바뀌는 상태값). docs/hardware/vehicle.dbc CM_ 참고.
+// InvMsg2=우선도 낮음(서서히 바뀌는 상태값). docs/hardware/cluster.dbc CM_ 참고.
 #define CAN_ID_INV_MSG1 0x100  // InvMsg1(100ms): Speed/DriveMode/DTC/Power/RegenPower
 #define CAN_ID_INV_MSG2 0x200  // InvMsg2(200ms): SOC/DClinkVoltage/Temp/DriveRange/Odometer
 

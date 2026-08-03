@@ -1,6 +1,6 @@
 # docs/design/can-signals.md
 
-> 근거 파일: `docs/hardware/vehicle.dbc` (Desktop `cluster.dbc`의 사본).
+> 근거 파일: `docs/hardware/cluster.dbc` (Desktop `cluster.dbc`의 사본).
 > 2026-07-31: 차량단(인버터) 설계가 아직 끝나지 않아, 이 프로젝트가 CAN 스펙을 먼저 정하고
 > 인버터 쪽이 여기 맞추기로 함(사용자 확인). 즉 아래 표는 "실차값 추측"이 아니라
 > **저희가 직접 정의한 스펙**이다. 다만 인버터 쪽 실물 구현/실기 검증 전이므로,
@@ -46,6 +46,6 @@
 `main/ui/ui.c`에서 정적 `--` placeholder(`HARNESS-TODO`)로 남아있다 — InvMsg1의
 byte5~7, InvMsg2의 byte6~7이 비어있으니 필요해지면 거기 채우면 된다.
 
-CAN ID/스케일/노드명/우선도 배치가 바뀌면 이 표, `docs/hardware/vehicle.dbc`
+CAN ID/스케일/노드명/우선도 배치가 바뀌면 이 표, `docs/hardware/cluster.dbc`
 (및 원본 Desktop `cluster.dbc`), `main/twai.c`, `main/include/vehicle_data.h`를
 함께 갱신할 것.

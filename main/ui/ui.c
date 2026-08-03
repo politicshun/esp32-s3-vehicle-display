@@ -16,7 +16,7 @@ extern const lv_img_dsc_t ui_glow_soc;
  *   power_kw(float), regen_kw(float), sys_temp_c(int16_t)
  *
  * 2026-07-31: 차량단(인버터) 설계가 아직 안 끝나서, 이 프로젝트가 CAN 스펙을 먼저 정하고
- * 인버터 쪽이 거기 맞추기로 함 — docs/hardware/vehicle.dbc(InvMsg1 0x100 / InvMsg2 0x200)에
+ * 인버터 쪽이 거기 맞추기로 함 — docs/hardware/cluster.dbc(InvMsg1 0x100 / InvMsg2 0x200)에
  * 우리가 직접 정의한 스펙이다. 화면 바인딩은 완료했지만 인버터 실물 구현/실기 검증 전이다.
  *
  * TRIP/시계/외기온도는 여전히 VehicleData_t에 소스가 없어 "HARNESS-TODO" 정적
@@ -230,7 +230,7 @@ static void build_page_drive(lv_obj_t *tv)
     lv_obj_align_to(unit, lbl_speed, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
 
     /* drive_mode(placeholder, CAN 0x302) -> P/R/N/D 배지. 값 자체는 실차 미대조 가정이라
-     * 화면엔 뜨지만 신뢰할 수 있는 값은 아님(docs/hardware/vehicle.dbc 참고). */
+     * 화면엔 뜨지만 신뢰할 수 있는 값은 아님(docs/hardware/cluster.dbc 참고). */
     lv_obj_t *gear_badge = lv_obj_create(page);
     lv_obj_remove_style_all(gear_badge);
     lv_obj_set_size(gear_badge, 56, 56);

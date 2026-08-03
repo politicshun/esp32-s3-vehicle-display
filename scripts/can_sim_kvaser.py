@@ -2,7 +2,7 @@
 # KVASER 실물 어댑터로 실제 구동 사이클(정차->가속->순항->감속->후진->정차, 반복)을
 # 흉내내서 InvMsg1(0x100, 100ms)/InvMsg2(0x200, 200ms)를 계속 쏴주는 벤치 테스트용 시뮬레이터.
 # CANKing의 Generator는 "고정값 주기 반복"만 되고 값이 시간에 따라 변하는 건 못 해서,
-# docs/hardware/vehicle.dbc를 cantools로 읽어 실측 스펙(factor/offset/범위) 그대로
+# docs/hardware/cluster.dbc를 cantools로 읽어 실측 스펙(factor/offset/범위) 그대로
 # 인코딩하고, python-can의 kvaser 백엔드(canlib32.dll)로 실제 버스에 낸다.
 #
 # 사용 전 확인:
@@ -17,9 +17,9 @@ from pathlib import Path
 import can
 import cantools
 
-DBC_PATH = Path(__file__).resolve().parent.parent / "docs" / "hardware" / "vehicle.dbc"
+DBC_PATH = Path(__file__).resolve().parent.parent / "docs" / "hardware" / "cluster.dbc"
 
-MSG1_PERIOD_S = 0.100  # InvMsg1 (docs/hardware/vehicle.dbc GenMsgCycleTime와 동일)
+MSG1_PERIOD_S = 0.100  # InvMsg1 (docs/hardware/cluster.dbc GenMsgCycleTime와 동일)
 MSG2_PERIOD_S = 0.200  # InvMsg2
 TICK_S = 0.02          # 시뮬레이션 상태 갱신 주기 (LVGL 쪽 20ms 루프와 맞춤 — 필수는 아님)
 
