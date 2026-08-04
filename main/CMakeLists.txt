@@ -10,6 +10,7 @@ idf_component_register(
         "ui/ui_style.c"
         "ui/ui_glow_speed.c"
         "ui/ui_glow_soc.c"
+        "ui/ui_font_hero_80.c"
     INCLUDE_DIRS 
         "include"
         "."

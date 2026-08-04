@@ -220,7 +220,7 @@ static void build_page_drive(lv_obj_t *tv)
     speed_seg_bounds[UI_SPEED_GRAD_SEGMENTS] = SPEED_GAUGE_MAX_KMH;
 
     lbl_speed = lv_label_create(page);
-    lv_obj_add_style(lbl_speed, &ui_style_label_big, 0);
+    lv_obj_add_style(lbl_speed, &ui_style_label_hero, 0);
     lv_label_set_text(lbl_speed, "0");
     lv_obj_align_to(lbl_speed, meter_speed, LV_ALIGN_CENTER, 0, -12);
 
@@ -231,20 +231,24 @@ static void build_page_drive(lv_obj_t *tv)
 
     /* drive_mode(placeholder, CAN 0x302) -> P/R/N/D 배지. 값 자체는 실차 미대조 가정이라
      * 화면엔 뜨지만 신뢰할 수 있는 값은 아님(docs/hardware/cluster.dbc 참고). */
+    /* 레퍼런스 클러스터들(Alibaba 벤치마킹, 2026-08-04)처럼 기어 배지를 크고 진하게 —
+     * 56px 회색 아웃라인에서 100px 시안 강조 배지로, 글자도 히어로 폰트로 키움. */
     lv_obj_t *gear_badge = lv_obj_create(page);
     lv_obj_remove_style_all(gear_badge);
-    lv_obj_set_size(gear_badge, 56, 56);
+    lv_obj_set_size(gear_badge, 100, 100);
     lv_obj_set_style_radius(gear_badge, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(gear_badge, 2, 0);
-    lv_obj_set_style_border_color(gear_badge, UI_COLOR_TEXT_SEC, 0);
-    lv_obj_set_style_bg_opa(gear_badge, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(gear_badge, 3, 0);
+    lv_obj_set_style_border_color(gear_badge, UI_COLOR_CYAN, 0);
+    lv_obj_set_style_border_opa(gear_badge, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(gear_badge, UI_COLOR_CYAN, 0);
+    lv_obj_set_style_bg_opa(gear_badge, LV_OPA_10, 0);
     lv_obj_clear_flag(gear_badge, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(gear_badge, LV_ALIGN_TOP_LEFT, 16, 16);
 
     lbl_gear = lv_label_create(gear_badge);
-    lv_obj_add_style(lbl_gear, &ui_style_label_mid, 0);
-    lv_obj_set_style_text_color(lbl_gear, UI_COLOR_TEXT_SEC, 0);
-    lv_label_set_text(lbl_gear, "--");
+    lv_obj_add_style(lbl_gear, &ui_style_label_hero, 0);
+    lv_obj_set_style_text_color(lbl_gear, UI_COLOR_CYAN, 0);
+    lv_label_set_text(lbl_gear, "-");
     lv_obj_center(lbl_gear);
 
     /* "핵심 표시 항목" 표의 "주행 모드(Drive Mode)" — 배지 아래 캡션으로 항목명만 표시 */
@@ -253,11 +257,20 @@ static void build_page_drive(lv_obj_t *tv)
     lv_label_set_text(lbl_gear_caption, "MODE");
     lv_obj_align_to(lbl_gear_caption, gear_badge, LV_ALIGN_OUT_BOTTOM_MID, 0, 4);
 
-    lv_obj_t *odo_card = make_info_card(page, "ODO", &lbl_odo);
-    lv_obj_align(odo_card, LV_ALIGN_BOTTOM_LEFT, 16, -16);
+    /* ODO/RANGE/TRIP 통합 하단바 (2026-08-04, Alibaba 벤치마킹) — 예전엔 ODO/TRIP은
+     * page1 좌우 구석, RANGE는 page2에 따로 떨어져 있었는데, 레퍼런스 클러스터들처럼
+     * 주행 정보를 한 줄로 묶어서 항상 같이 보이게 함. */
+    lv_obj_t *bottom_row = lv_obj_create(page);
+    lv_obj_remove_style_all(bottom_row);
+    lv_obj_set_size(bottom_row, 800 - 32, UI_CARD_H);
+    lv_obj_set_flex_flow(bottom_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(bottom_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_align(bottom_row, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_clear_flag(bottom_row, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *trip_card = make_info_card(page, "TRIP", &lbl_trip_todo);
-    lv_obj_align(trip_card, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
+    make_info_card(bottom_row, "ODO", &lbl_odo);
+    make_info_card(bottom_row, "RANGE", &lbl_range);
+    make_info_card(bottom_row, "TRIP", &lbl_trip_todo);
 }
 
 /* ---------------------------------------------------------------------
@@ -341,14 +354,11 @@ static void build_page_battery(lv_obj_t *tv)
     lv_label_set_text(lbl_soc_pct, "0%");
     lv_obj_align_to(lbl_soc_pct, meter_soc, LV_ALIGN_CENTER, 0, 0);
 
-    /* Pack Voltage / Range — 게이지 2개가 위쪽을 다 차지해서 하단 좌우 카드로 재배치 */
+    /* Pack Voltage — Range는 2026-08-04부터 page1 ODO/RANGE/TRIP 통합 하단바로 이동해서
+     * page2엔 이제 이 카드 하나만 남음, 가운데로 재배치. */
     lv_obj_t *volt_card = make_info_card(page, "Pack Voltage", &lbl_pack_volt);
     lv_label_set_text(lbl_pack_volt, "-- V");
-    lv_obj_align(volt_card, LV_ALIGN_BOTTOM_LEFT, 16, -16);
-
-    /* range_km(placeholder, CAN 0x304) */
-    lv_obj_t *range_card = make_info_card(page, "Range", &lbl_range);
-    lv_obj_align(range_card, LV_ALIGN_BOTTOM_RIGHT, -16, -16);
+    lv_obj_align(volt_card, LV_ALIGN_BOTTOM_MID, 0, -16);
 }
 
 /* ---------------------------------------------------------------------
