@@ -53,6 +53,9 @@ CONFIG_LV_FONT_MONTSERRAT_48=y
 
 # --- LVGL 리프레시/입력 폴링 주기: lvgl_ui_task의 20ms 루프 주기와 맞춤(2026-07-30).
 #     기본값 30ms에서는 20ms마다 도는 태스크 루프 중 일부가 lv_timer_handler() 안에서
-#     "아직 주기 안 지남"으로 버려져 드래그 반응이 뻑뻑하게 느껴짐. ---
+#     "아직 주기 안 지남"으로 버려져 드래그 반응이 뻑뻑하게 느껴짐.
+#     (2026-08-04: direct_mode 실험 중 물리 프레임 주기와의 경합 가능성 때문에 잠깐
+#     30ms로 올려봤으나 지직거림과는 무관한 것으로 판명되어 direct_mode를 되돌리며
+#     같이 원복함.) ---
 CONFIG_LV_DISP_DEF_REFR_PERIOD=20
 CONFIG_LV_INDEV_DEF_READ_PERIOD=20

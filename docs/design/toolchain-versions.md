@@ -36,6 +36,31 @@
   `CONFIG_BT_BLUEDROID_ENABLED=n`은 값이 ESP-IDF Kconfig 기본값과 동일해서 save-defconfig가
   생략한 것뿐, 충돌 아님(kconfgen 특성). 저장소 버전(주석 포함) 그대로 유지.
 
+- 2026-08-04: RGB LCD 더블버퍼링 도입 — `esp_lcd_rgb_panel_config_t.num_fbs=2` +
+  `esp_lcd_rgb_panel_get_frame_buffer()`로 얻은 패널 자체 프레임버퍼 2장을 LVGL 드로우
+  버퍼로 직접 사용(zero-copy, `main/lvgl.c`). 화면 전환 끊김 개선 확인, 실기기 커밋됨
+  (`8216d30`).
+- 2026-08-04: 터치 반응성 개선을 위해 `lv_disp_drv_t.direct_mode`(부분 재드로우)를
+  시도했으나, 3페이지(Sys Temp 카드/DTC 배너) · 4페이지(BLE·Vehicle Status 점)에서
+  원인 불명의 노이즈성 화면 지직거림이 실기기에서 재현됨. 아래 4가지 가설을 각각 실기기에서
+  검증했으나 전부 재현 조건을 없애지 못함 — **원인 미확정 상태로 남음, `확인필요`**:
+  1. "드물게 갱신되는 반투명/둥근모서리 위젯이 버퍼 간 동기화가 안 맞는다" — 매 프레임
+     강제 `lv_obj_invalidate()`로도 안 없어짐
+  2. "반투명 블렌딩이 두 버퍼에서 다르게 누적된다" — 해당 위젯들을 전부 불투명으로
+     바꿔도 안 없어짐
+  3. "LVGL 리프레시 주기(20ms)가 RGB 패널 물리 프레임 주기(pclk_hz=16MHz 기준 ~25.6ms)보다
+     짧아서 CPU 쓰기와 DMA 읽기가 겹친다" — `CONFIG_LV_DISP_DEF_REFR_PERIOD`를 30ms로
+     올려도 안 없어짐
+  4. "CAN 데이터(sys_temp_c/dtc_code/ble_connected)가 흔들려서 그래 보인다" — 실기기
+     로그로 확인한 결과 데이터는 완전히 정적(CAN 시뮬레이터 미구동 상태)이었음, 데이터
+     문제 아님
+  결국 `direct_mode` 시도 이전 상태인 `s_disp_drv.full_refresh=1`로 되돌림(더블버퍼링
+  자체는 유지) — 지직거림 사라짐, 화면 전환 끊김도 없음(사용자 실기기 확인).
+  **다음에 `direct_mode`를 다시 시도한다면**: 위 4개 가설은 이미 기각됐으니 반복하지 말고,
+  esp_lcd RGB panel 드라이버의 zero-copy 경로(`rgb_panel_draw_bitmap()`)와 LVGL
+  `direct_mode`의 `refr_sync_areas()` 상호작용 자체를 실측(로직 애널라이저 등)으로
+  검증하는 쪽을 우선 고려할 것.
+
 ## API 사용 전 확인 규칙
 - `esp_lcd_*` 관련 구조체를 쓸 때는 위 ESP-IDF 버전에 해당하는 헤더를
   (로컬 `managed_components/` 또는 IDF 설치 경로, 또는 해당 버전 태그의 공개 저장소에서) 직접 확인 후 사용한다.

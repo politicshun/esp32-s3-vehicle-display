@@ -168,8 +168,13 @@ void lvgl_ui_task(void *pvParameters) {
     // esp_lcd_panel_rgb.c의 rgb_panel_draw_bitmap()은 넘어온 포인터가 자기 fbs[i]
     // 범위 안이면 CPU memcpy 없이 cur_fb_index만 바꾸는 zero-copy 경로를 타고,
     // 그 스왑은 bounce buffer가 프레임 경계에서만 반영하므로(lcd_rgb_panel_fill_bounce_buffer
-    // 확인함) 티어링 없이 즉시 반영된다. 그 대신 매 프레임 화면 전체를 다시 그려야 하므로
-    // full_refresh를 켠다 (부분 버퍼로는 두 물리 버퍼 내용이 어긋나 화면이 깨짐).
+    // 확인함) 티어링 없이 즉시 반영된다. direct_mode(부분 재드로우, LVGL 8.4 lv_refr.c 확인함)로
+    // 한 번 시도했으나 3/4페이지의 반투명 카드/점 영역에서 원인 미상의 노이즈성 지직거림이
+    // 실기기에서 재현됨(2026-08-04) — 강제 invalidate/불투명화/LV_DISP_DEF_REFR_PERIOD 조정
+    // 세 가지 가설 다 시도했지만 재현 조건을 못 없앴고, CAN 데이터도 정적이라 값 흔들림도
+    // 아니었음. 원인 미확정 상태라 우선 안전한 full_refresh(매 프레임 전체 재드로우, 위의
+    // zero-copy 스왑 자체는 동일하게 적용됨)로 되돌림 — direct_mode 재시도는 원인을 더
+    // 확실히 찾은 뒤에.
     void *fb0 = NULL;
     void *fb1 = NULL;
     if (esp_lcd_rgb_panel_get_frame_buffer(s_panel_handle, 2, &fb0, &fb1) != ESP_OK) {
