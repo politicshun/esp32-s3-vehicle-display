@@ -60,6 +60,10 @@
   esp_lcd RGB panel 드라이버의 zero-copy 경로(`rgb_panel_draw_bitmap()`)와 LVGL
   `direct_mode`의 `refr_sync_areas()` 상호작용 자체를 실측(로직 애널라이저 등)으로
   검증하는 쪽을 우선 고려할 것.
+  **2026-08-04(2차 시도) 업데이트**: 실제로 하드웨어 vsync 동기화(가설 6)까지 시도했으나
+  실패함 — `experiment/direct-mode-vsync-sync` 브랜치(커밋 `e667979`)에 시도 코드와
+  가설 5·6 상세 기록 보존. **제품화 단계 전 로직 분석기 실측 필요, `main`은 손대지 않고
+  더블버퍼링+`full_refresh`로 유지 중.**
 
 ## API 사용 전 확인 규칙
 - `esp_lcd_*` 관련 구조체를 쓸 때는 위 ESP-IDF 버전에 해당하는 헤더를
