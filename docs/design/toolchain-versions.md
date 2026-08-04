@@ -56,10 +56,43 @@
      문제 아님
   결국 `direct_mode` 시도 이전 상태인 `s_disp_drv.full_refresh=1`로 되돌림(더블버퍼링
   자체는 유지) — 지직거림 사라짐, 화면 전환 끊김도 없음(사용자 실기기 확인).
-  **다음에 `direct_mode`를 다시 시도한다면**: 위 4개 가설은 이미 기각됐으니 반복하지 말고,
-  esp_lcd RGB panel 드라이버의 zero-copy 경로(`rgb_panel_draw_bitmap()`)와 LVGL
-  `direct_mode`의 `refr_sync_areas()` 상호작용 자체를 실측(로직 애널라이저 등)으로
-  검증하는 쪽을 우선 고려할 것.
+
+- 2026-08-04(2차 시도, **결국 실패 — 제품화 단계에서 재조사 필요**): 위 4가지 기각 후
+  `direct_mode`를 두 번째로 재시도. `experiment/direct-mode-vsync-sync` 브랜치에서 작업,
+  `main`은 절대 안 건드림(더블버퍼링+`full_refresh`로 안전하게 유지, 커밋 `5cce184`).
+
+  **가설 5 — 실측(로직 분석 시도)**: `lvgl_flush_cb`에 매 플러시마다 `area` 좌표를 로그로
+  찍어서 어느 영역이 왜 다시 그려지는지 실측하려 했으나, **`direct_mode`에서도 `area`가
+  항상 풀스크린(0,0)-(799,479)으로만 찍혀서** 부분영역 정보 자체를 flush_cb 레벨에서는
+  얻을 수 없었음(이 방식 자체가 무효함을 확인). 대신 웹 검색으로 LVGL `direct_mode` +
+  더블버퍼 조합이 ESP32-S3/NXP iMXRT/STM32 등 여러 플랫폼에 걸쳐 보고된 **알려진 이슈**임을
+  확인함(espressif/esp-idf#9121, lvgl/lvgl#6545) — 커뮤니티가 제시한 원인은 "LVGL
+  소프트웨어가 다음 프레임을 그려도 된다고 판단하는 시점이 RGB 패널의 실제 스캔아웃 완료
+  시점과 하드웨어적으로 동기화되어 있지 않다"는 것.
+
+  **가설 6 — 하드웨어 vsync 동기화**: `esp_lcd_rgb_panel_register_event_callbacks()`의
+  `on_frame_buf_complete`(패널이 프레임버퍼 하나를 다 DMA로 내보냈다는 ISR 이벤트)로
+  세마포어를 만들어, `lvgl_ui_task` 루프가 고정 `vTaskDelay(20)` 대신 이 세마포어를
+  기다리게 해서 소프트웨어 렌더링이 물리 프레임 완료 이벤트보다 앞서나가지 못하게 함
+  (`main/lvgl.c`의 `lcd_frame_buf_complete_cb`/`s_frame_done_sem`). 부팅/터치 정상,
+  **그런데도 3/4페이지 지직거림은 그대로 재현됨** — 커뮤니티가 제시한 정석 해법으로도
+  안 고쳐졌다는 뜻.
+
+  **부수 발견 (기존 분석의 잘못된 전제 정정)**: `lv_obj_set_style_bg_color`/`border_color`
+  등 스타일 세터는 값이 같아도 **무조건 무효화한다**(`lv_obj_style.c:270-276`,
+  `lv_obj_set_local_style_prop()`이 비교 없이 매번 `lv_obj_refresh_style()` 호출).
+  "값이 안 바뀌면 무효화 생략"이라고 가정했던 기존 분석(가설 1, 위 4번 항목)의 전제가
+  틀렸었음 — `dot_ble`/`dot_vehicle`/`card_sys_temp` 테두리/`banner_dtc` 배경은 사실 이미
+  매 프레임(20~25ms) 계속 무효화·재드로우되고 있었다. 그런데도 `dot_ble`/`dot_vehicle`은
+  완전 불투명(`LV_OPA_COVER`)인데 지직거리므로 반투명 블렌딩 문제(가설 2)도 아니고,
+  하드웨어 동기화(가설 6)도 아니라면, 남은 원인은 LVGL `direct_mode`의 `refr_sync_areas()`/
+  invalidate-join 로직 자체의 미세한 버그이거나, 이 정도 소형/고대비 위젯 특유의 어떤
+  렌더링 경로 문제로 좁혀짐 — **로직 분석기로 실제 RGB 신호를 찍어보지 않는 한 여기서 더
+  확정하기 어려움**.
+
+  **최종 조치**: `main`은 `direct_mode` 없이(더블버퍼링 + `full_refresh`) 유지, 이 실험은
+  `experiment/direct-mode-vsync-sync` 브랜치에 커밋 상태로 보존. **제품화 단계에서
+  로직 분석기 등 실측 장비로 재조사 필요** — 그 전까지는 가설 1~6을 반복하지 말 것.
 
 ## API 사용 전 확인 규칙
 - `esp_lcd_*` 관련 구조체를 쓸 때는 위 ESP-IDF 버전에 해당하는 헤더를

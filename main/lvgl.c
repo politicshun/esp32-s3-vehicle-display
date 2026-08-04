@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "ui/ui.h"
 
 #include "esp_lcd_panel_io.h"
@@ -22,6 +23,23 @@ static esp_lcd_touch_handle_t s_touch_handle = NULL;
 static lv_disp_draw_buf_t s_draw_buf;
 static lv_disp_drv_t s_disp_drv;
 static lv_indev_drv_t s_indev_drv;
+
+/* direct_mode에서 LVGL 소프트웨어 리프레시가 RGB 패널의 실제 스캔아웃보다 빨리
+ * "다음 프레임 그려도 됨"이라고 판단해버리는 문제(espressif/esp-idf#9121, LVGL
+ * direct+더블버퍼 조합에서 여러 플랫폼에 걸쳐 보고된 알려진 이슈) 대응.
+ * on_frame_buf_complete(패널이 프레임버퍼 하나를 다 DMA로 내보냈다는 하드웨어 이벤트,
+ * ISR 컨텍스트)로 세마포어를 주고, lvgl_ui_task 루프가 고정 20ms 대기 대신 이 세마포어를
+ * 기다리게 해서 "실제로 한 프레임이 다 나간 뒤에만" 다음 렌더를 시작하게 한다. */
+static SemaphoreHandle_t s_frame_done_sem = NULL;
+
+static bool IRAM_ATTR lcd_frame_buf_complete_cb(esp_lcd_panel_handle_t panel,
+                                                 const esp_lcd_rgb_panel_event_data_t *edata,
+                                                 void *user_ctx) {
+    (void)panel; (void)edata; (void)user_ctx;
+    BaseType_t woken = pdFALSE;
+    xSemaphoreGiveFromISR(s_frame_done_sem, &woken);
+    return woken == pdTRUE;
+}
 
 /* ---- LVGL -> 실제 패널로 픽셀 밀어넣기 ---- */
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map) {
@@ -99,6 +117,20 @@ static esp_err_t lcd_panel_init(void) {
         return err;
     }
 
+    s_frame_done_sem = xSemaphoreCreateBinary();
+    if (s_frame_done_sem == NULL) {
+        ESP_LOGE(TAG, "프레임 완료 세마포어 생성 실패");
+        return ESP_ERR_NO_MEM;
+    }
+    esp_lcd_rgb_panel_event_callbacks_t cbs = {
+        .on_frame_buf_complete = lcd_frame_buf_complete_cb,
+    };
+    err = esp_lcd_rgb_panel_register_event_callbacks(s_panel_handle, &cbs, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "프레임 완료 콜백 등록 실패: %s", esp_err_to_name(err));
+        return err;
+    }
+
     ESP_LOGI(TAG, "RGB LCD 패널 초기화 완료 (%dx%d)", LCD_H_RES, LCD_V_RES);
     return ESP_OK;
 }
@@ -168,13 +200,18 @@ void lvgl_ui_task(void *pvParameters) {
     // esp_lcd_panel_rgb.c의 rgb_panel_draw_bitmap()은 넘어온 포인터가 자기 fbs[i]
     // 범위 안이면 CPU memcpy 없이 cur_fb_index만 바꾸는 zero-copy 경로를 타고,
     // 그 스왑은 bounce buffer가 프레임 경계에서만 반영하므로(lcd_rgb_panel_fill_bounce_buffer
-    // 확인함) 티어링 없이 즉시 반영된다. direct_mode(부분 재드로우, LVGL 8.4 lv_refr.c 확인함)로
-    // 한 번 시도했으나 3/4페이지의 반투명 카드/점 영역에서 원인 미상의 노이즈성 지직거림이
-    // 실기기에서 재현됨(2026-08-04) — 강제 invalidate/불투명화/LV_DISP_DEF_REFR_PERIOD 조정
-    // 세 가지 가설 다 시도했지만 재현 조건을 못 없앴고, CAN 데이터도 정적이라 값 흔들림도
-    // 아니었음. 원인 미확정 상태라 우선 안전한 full_refresh(매 프레임 전체 재드로우, 위의
-    // zero-copy 스왑 자체는 동일하게 적용됨)로 되돌림 — direct_mode 재시도는 원인을 더
-    // 확실히 찾은 뒤에.
+    // 확인함) 티어링 없이 즉시 반영된다.
+    //
+    // direct_mode(부분 재드로우) 2026-08-04 두 번째 시도: 첫 시도 때 3/4페이지 일부
+    // 위젯에서 노이즈성 지직거림이 있었고(강제 invalidate/불투명화/리프레시 주기 조정
+    // 세 가설 다 기각, docs/design/toolchain-versions.md 2026-08-04 기록 참고), 웹 검색
+    // 결과 LVGL direct_mode + 더블버퍼 조합이 ESP32/NXP/STM32 등 여러 플랫폼에 걸쳐
+    // 보고된 알려진 이슈였음(espressif/esp-idf#9121) — 원인은 LVGL 소프트웨어가 "다음
+    // 프레임 그려도 됨"이라고 판단하는 시점이 RGB 패널의 실제 스캔아웃 완료 시점과
+    // 하드웨어적으로 동기화되어 있지 않다는 것. 그래서 이번엔 esp_lcd_rgb_panel의
+    // on_frame_buf_complete 콜백(lcd_frame_buf_complete_cb)으로 세마포어를 주고,
+    // lvgl_ui_task 루프가 고정 vTaskDelay(20) 대신 이 세마포어를 기다리게 해서 실제
+    // 하드웨어 프레임 완료 이벤트에 맞춰서만 다음 렌더를 시작하도록 함.
     void *fb0 = NULL;
     void *fb1 = NULL;
     if (esp_lcd_rgb_panel_get_frame_buffer(s_panel_handle, 2, &fb0, &fb1) != ESP_OK) {
@@ -189,7 +226,7 @@ void lvgl_ui_task(void *pvParameters) {
     s_disp_drv.ver_res = LCD_V_RES;
     s_disp_drv.flush_cb = lvgl_flush_cb;
     s_disp_drv.draw_buf = &s_draw_buf;
-    s_disp_drv.full_refresh = 1;
+    s_disp_drv.direct_mode = 1;
     lv_disp_drv_register(&s_disp_drv);
 
     if (touch_ok) {
@@ -212,6 +249,10 @@ void lvgl_ui_task(void *pvParameters) {
         last_tick = now;
 
         lv_timer_handler();
-        vTaskDelay(pdMS_TO_TICKS(20));
+        // 고정 20ms 대기 대신, 패널이 실제로 프레임 하나를 다 내보낸 뒤에만 다음 루프를
+        // 돈다 (s_frame_done_sem, lcd_frame_buf_complete_cb 참고) — 소프트웨어가 물리
+        // 스캔아웃보다 앞서나가는 것을 막는 게 목적이라 타임아웃은 워치독 방지용 안전장치일
+        // 뿐, 정상 동작 중엔 항상 세마포어로 깨어난다.
+        xSemaphoreTake(s_frame_done_sem, pdMS_TO_TICKS(100));
     }
 }
