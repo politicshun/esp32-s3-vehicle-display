@@ -3,7 +3,6 @@
 #include "pin_config.h"
 #include "bsp.h"
 #include "esp_log.h"
-#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ui/ui.h"
@@ -17,11 +16,6 @@ static const char *TAG = "LVGL_TASK";
 
 #define LCD_H_RES 800
 #define LCD_V_RES 480
-
-// LVGL 드로우 버퍼: 화면 전체가 아니라 일부 높이만 잡아도 충분히 빠릅니다.
-// PSRAM에 할당(8MB 여유 있음). 1/4 높이로 키우면 풀스크린(타일뷰 드래그) 리드로우 시
-// flush 왕복 횟수가 1/10일 때보다 줄어들어 스와이프가 더 매끄러워짐.
-#define LVGL_BUF_HEIGHT (LCD_V_RES / 4)
 
 static esp_lcd_panel_handle_t s_panel_handle = NULL;
 static esp_lcd_touch_handle_t s_touch_handle = NULL;
@@ -75,7 +69,7 @@ static esp_err_t lcd_panel_init(void) {
             .flags.pclk_active_neg = true,
         },
         .data_width = 16,
-        .num_fbs = 1,
+        .num_fbs = 2,
         .dma_burst_size = 64,
         .bounce_buffer_size_px = 20 * LCD_H_RES,
         .hsync_gpio_num = LCD_HSYNC_GPIO,
@@ -169,21 +163,28 @@ void lvgl_ui_task(void *pvParameters) {
     // LVGL 틱 소스: 원래 코드엔 없었던 부분. 애니메이션/타이머가 이걸로 시간을 잽니다.
     // (별도 esp_timer 콜백 대신, 이 태스크의 20ms 주기 자체를 tick으로 사용)
 
-    static lv_color_t *buf1 = NULL;
-    buf1 = heap_caps_malloc(LCD_H_RES * LVGL_BUF_HEIGHT * sizeof(lv_color_t),
-                             MALLOC_CAP_SPIRAM);
-    if (buf1 == NULL) {
-        ESP_LOGE(TAG, "LVGL 드로우 버퍼 할당 실패 (PSRAM 부족)");
+    // 더블버퍼링: 별도 PSRAM 버퍼를 새로 할당하지 않고, RGB panel 드라이버가 이미
+    // 갖고 있는 풀스크린 프레임버퍼 2장을 LVGL 드로우 버퍼로 그대로 쓴다.
+    // esp_lcd_panel_rgb.c의 rgb_panel_draw_bitmap()은 넘어온 포인터가 자기 fbs[i]
+    // 범위 안이면 CPU memcpy 없이 cur_fb_index만 바꾸는 zero-copy 경로를 타고,
+    // 그 스왑은 bounce buffer가 프레임 경계에서만 반영하므로(lcd_rgb_panel_fill_bounce_buffer
+    // 확인함) 티어링 없이 즉시 반영된다. 그 대신 매 프레임 화면 전체를 다시 그려야 하므로
+    // full_refresh를 켠다 (부분 버퍼로는 두 물리 버퍼 내용이 어긋나 화면이 깨짐).
+    void *fb0 = NULL;
+    void *fb1 = NULL;
+    if (esp_lcd_rgb_panel_get_frame_buffer(s_panel_handle, 2, &fb0, &fb1) != ESP_OK) {
+        ESP_LOGE(TAG, "RGB panel 프레임버퍼 획득 실패");
         vTaskDelete(NULL);
         return;
     }
-    lv_disp_draw_buf_init(&s_draw_buf, buf1, NULL, LCD_H_RES * LVGL_BUF_HEIGHT);
+    lv_disp_draw_buf_init(&s_draw_buf, fb0, fb1, LCD_H_RES * LCD_V_RES);
 
     lv_disp_drv_init(&s_disp_drv);
     s_disp_drv.hor_res = LCD_H_RES;
     s_disp_drv.ver_res = LCD_V_RES;
     s_disp_drv.flush_cb = lvgl_flush_cb;
     s_disp_drv.draw_buf = &s_draw_buf;
+    s_disp_drv.full_refresh = 1;
     lv_disp_drv_register(&s_disp_drv);
 
     if (touch_ok) {
