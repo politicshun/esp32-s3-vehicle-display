@@ -4,10 +4,16 @@
 #include <stdio.h>
 #include <stdbool.h>
 
-/* 게이지 뒤에 까는 정적 글로우 배경 (scripts/gen_glow_image.py로 생성, main/ui/ui_glow_*.c).
- * 매 프레임 재계산되는 lv shadow와 달리 한 번만 그려진 비트맵을 그대로 blit하므로 가볍다. */
-extern const lv_img_dsc_t ui_glow_speed;
-extern const lv_img_dsc_t ui_glow_soc;
+/* 게이지 다이얼 페이스(눈금/숫자/트랙 홈/경고구역/글로우 배경) 정적 이미지
+ * (scripts/gen_gauge_face.py로 생성, main/ui/ui_gauge_*.c). 2026-08-04: 예전엔 lv_meter가
+ * 런타임에 눈금/숫자를 그렸는데 얇고 밋밋해서 "조잡해 보인다"는 피드백 — PIL로
+ * 안티에일리어싱된 다이얼을 미리 구워서 훨씬 정교하게 만들고, LVGL은 그 위에 움직이는
+ * 값 아크(현재 속도/파워/SOC 채움)만 실시간으로 그린다(make_gauge_meter 참고). */
+extern const lv_img_dsc_t ui_gauge_speed_face;
+extern const lv_img_dsc_t ui_gauge_power_face;
+extern const lv_img_dsc_t ui_gauge_soc_face;
+extern const lv_img_dsc_t ui_gauge_volt_face;
+extern const lv_img_dsc_t ui_gauge_temp_face;
 
 /*
  * main/include/vehicle_data.h 의 VehicleData_t 필드:
@@ -66,14 +72,36 @@ static lv_obj_t *bar_regen;           /* regen_kw를 배터리 충전 막대처�
 static lv_obj_t *meter_soc;
 static lv_meter_indicator_t *soc_value_indic;
 static lv_obj_t *lbl_soc_pct;
+static lv_obj_t *lbl_soc_unit;    /* "%" — 2026-08-05: 숫자와 한 줄이라 SOC 아크 확대 후에도
+                                   * 겹쳐 보인다는 피드백으로 Power의 lbl_power_unit과 동일하게
+                                   * 줄바꿈 + 축소 */
 static lv_obj_t *lbl_pack_volt;
 static lv_obj_t *lbl_range;        /* range_km 바인딩 (placeholder, CAN 0x304) */
 
-/* Page 3 — 시스템 상태 및 진단 */
+/* Page 3 — 시스템 상태 및 진단
+ * 2026-08-05(1차): Pack Voltage/Sys Temp가 그냥 사각형 카드에 텍스트만 들어있어 "너무
+ * 단순하다"는 피드백 — page2의 Power/SOC처럼 원형 아크 게이지로 교체했었음.
+ * 2026-08-05(2차): "전압/온도는 급격히 변하는 값이 아닌데 원형 아크는 과하다, 막대+위험구간
+ * 표시가 낫겠다"는 피드백으로 재교체 — scripts/gen_gauge_face.py의 draw_bar_face()가 구운
+ * 가로 막대 트랙 홈 이미지 위에, lv_bar 라이브 인디케이터(main part 투명, indicator만 채움
+ * 색)를 정확히 겹쳐서 "채워지는 막대" 느낌을 낸다(원형의 make_gauge_meter와 동일 아이디어).
+ * UI_BAR_GAUGE_* 상수는 gen_gauge_face.py의 BAR_GROOVE_* 값과 반드시 일치해야 함(어긋나면
+ * 라이브 막대와 baked 트랙 테두리가 안 맞아 보임).
+ * Pack Voltage는 docs/design/can-signals.md의 실제 CAN 스펙 범위([0|80]V) 그대로 쓰고,
+ * Sys Temp는 실제 범위(-20~235)가 너무 넓어서 UI_TEMP_GAUGE_* 표시 스케일로 축소(레이블 숫자는
+ * 원본 값 그대로 찍고 막대만 clamp — anim_power_exec_cb와 동일 패턴). */
+#define UI_TEMP_GAUGE_MIN (-20)
+#define UI_TEMP_GAUGE_MAX 120
+#define UI_BAR_GAUGE_CANVAS_W 340
+#define UI_BAR_GAUGE_CANVAS_H 130
+#define UI_BAR_GAUGE_GROOVE_W 300
+#define UI_BAR_GAUGE_GROOVE_H 28
+#define UI_BAR_GAUGE_GROOVE_CY 34  /* baked 이미지 top 기준 트랙 홈 세로 중심 */
 static lv_obj_t *banner_dtc;
 static lv_obj_t *lbl_dtc_code;
+static lv_obj_t *bar_volt;        /* 트랙 홈 이미지 위에 겹치는 라이브 채움 막대 */
 static lv_obj_t *lbl_pack_volt2;  /* page3 전용 전압 라벨 (page2의 lbl_pack_volt와 별개 위젯) */
-static lv_obj_t *card_sys_temp;   /* sys_temp_c 경고 시 테두리 색 전환용 */
+static lv_obj_t *bar_temp;
 static lv_obj_t *lbl_sys_temp;    /* sys_temp_c 바인딩 (placeholder, CAN 0x307) */
 
 /* Page 4 — 기기 조작 및 연결성 */
@@ -122,60 +150,55 @@ static lv_obj_t *make_info_card(lv_obj_t *parent, const char *title, lv_obj_t **
     return card;
 }
 
-/* 64x64 저해상도 글로우 원본(ui_glow_speed/ui_glow_soc)을 target_size로 확대해서 배치.
- * LVGL zoom(256=100%)으로 키우므로 원본 해상도가 작아도 플래시를 거의 안 먹는다. */
-static lv_obj_t *make_glow_bg(lv_obj_t *parent, const lv_img_dsc_t *src, int target_size)
+/* 다이얼 페이스 정적 이미지를 원본 해상도 그대로(zoom 없이) 배치 — gen_gauge_face.py가
+ * 이미 실제 표시 크기 기준으로 캔버스를 구웠으므로 확대/축소가 필요 없다. */
+static lv_obj_t *make_gauge_face_bg(lv_obj_t *parent, const lv_img_dsc_t *src)
 {
     lv_obj_t *img = lv_img_create(parent);
     lv_img_set_src(img, src);
-    lv_img_set_pivot(img, src->header.w / 2, src->header.h / 2);
-    lv_img_set_zoom(img, (target_size * 256) / src->header.w);
     return img;
 }
 
-/* 자동차 계기판 느낌의 원형 게이지: 눈금+숫자 스케일 + 위험구간 정적 아크 + (옵션) 값 아크(동적).
- * tick_cnt/major_nth로 눈금 간격을 정하고(예: tick_cnt=21,major_nth=2 -> 10단위 눈금,
- * 20단위 숫자), warn_end > warn_start일 때만 경고색 정적 아크를 깔아준다.
+/* 자동차 계기판 느낌의 원형 게이지 — 눈금/숫자/경고구역은 이제 make_gauge_face_bg()로 깐
+ * 정적 이미지가 담당하고, 여기서는 그 위에 겹쳐 그릴 "움직이는 값 아크"만 위한 투명
+ * lv_meter를 만든다(스케일의 각도/반지름 공식은 scripts/gen_gauge_face.py 상단 주석에
+ * 그대로 옮겨적어 두 값이 서로 어긋나지 않게 함).
  * value_arc_enabled=false면 단색 값 아크를 만들지 않고 scale_out으로 스케일 포인터만 내보낸다
  * (호출자가 직접 그라데이션 세그먼트 등 커스텀 인디케이터를 붙일 수 있게). */
 static lv_obj_t *make_gauge_meter(lv_obj_t *parent, int size, int32_t min, int32_t max,
-                                   int tick_cnt, int major_nth,
-                                   int32_t warn_start, int32_t warn_end,
                                    bool value_arc_enabled,
                                    lv_meter_indicator_t **value_indic_out,
                                    lv_meter_scale_t **scale_out)
 {
     lv_obj_t *meter = lv_meter_create(parent);
     lv_obj_set_size(meter, size, size);
-    lv_obj_set_style_bg_color(meter, UI_COLOR_BG, LV_PART_MAIN);
-    lv_obj_set_style_border_width(meter, 1, LV_PART_MAIN);
-    lv_obj_set_style_border_color(meter, UI_COLOR_TEXT_SEC, LV_PART_MAIN);
-    lv_obj_set_style_border_opa(meter, LV_OPA_30, LV_PART_MAIN);
-    /* NOTE: 시안 글로우(shadow_width)를 시도했으나 LVGL 소프트웨어 그림자 렌더링이 매우 무거워서
-     * 애니메이션되는 원형 게이지 2개에 매 프레임 재계산되자 CPU1이 거기 묶여 task watchdog
-     * 타임아웃(화면 멈춤 + 발열)까지 발생 — 실기기에서 재현 확인 후 제거함. 정적 위젯에
-     * 작은 shadow_width로 다시 시도하는 건 몰라도, 애니메이션 위젯에는 쓰지 말 것. */
-    lv_obj_set_style_text_color(meter, UI_COLOR_TEXT_SEC, LV_PART_TICKS);
+    lv_obj_set_style_border_width(meter, 0, LV_PART_MAIN);
+    /* 2026-08-05: "눈금-빈 아크-실제 아크-숫자, 4겹으로 나뉘어 보인다"는 버그 리포트로
+     * 발견 — sdkconfig의 CONFIG_LV_USE_THEME_DEFAULT=y가 lv_meter에 기본 "card" 스타일을
+     * 입히는데(managed_components/lvgl__lvgl/src/extra/themes/default/lv_theme_default.c
+     * lv_style_set_pad_all(&styles->card, PAD_DEF), DPI_DEF=130 기준 약 19px) 우리는 이
+     * padding을 한 번도 0으로 안 지웠다. lv_meter.c draw_arcs()의 r_out은
+     * lv_obj_get_content_coords()(테두리+패딩 뺀 영역)를 기준으로 계산되므로, 실제 라이브
+     * 아크의 r_out이 gen_gauge_face.py가 가정한 값(size/2, padding 없음)보다 padding만큼
+     * 작아서 — baked 트랙(바깥쪽)과 라이브 아크(그 padding만큼 안쪽)가 서로 다른 반지름에
+     * 그려져 별개의 두 링처럼 보였다. padding을 0으로 지워야 baked 이미지와 좌표계가 맞는다. */
+    lv_obj_set_style_pad_all(meter, 0, LV_PART_MAIN);
     lv_obj_clear_flag(meter, LV_OBJ_FLAG_CLICKABLE);
 
     lv_meter_scale_t *scale = lv_meter_add_scale(meter);
     lv_meter_set_scale_range(meter, scale, min, max, 270, 135);
-    lv_meter_set_scale_ticks(meter, scale, tick_cnt, 2, 8, UI_COLOR_TEXT_SEC);
-    lv_meter_set_scale_major_ticks(meter, scale, major_nth, 3, 14, UI_COLOR_TEXT_PRI, 10);
-
-    /* 경고구역(고정)은 눈금 바로 안쪽에 얇게, 값 아크(동적)는 그보다 더 안쪽에 두껍게 —
-     * 반지름을 분리해서 두 아크가 겹치지 않고 계기판처럼 층이 지게 한다. */
-    if (warn_end > warn_start) {
-        lv_meter_indicator_t *warn = lv_meter_add_arc(meter, scale, 6, UI_COLOR_RED, -8);
-        lv_meter_set_indicator_start_value(meter, warn, warn_start);
-        lv_meter_set_indicator_end_value(meter, warn, warn_end);
-    }
 
     if (value_arc_enabled) {
         /* lv_meter_set_indicator_value()는 start=end=v로 설정해서 길이 0인 점이 되어버리므로
          * (헤더 문서에 명시됨) 쓰지 않는다 — start는 min에 고정하고 end만 갱신해야
-         * "0부터 현재값까지 채워지는" lv_arc 스타일의 게이지 느낌이 난다. */
-        lv_meter_indicator_t *value_indic = lv_meter_add_arc(meter, scale, 14, UI_COLOR_CYAN, -34);
+         * "0부터 현재값까지 채워지는" lv_arc 스타일의 게이지 느낌이 난다.
+         * value_arc_enabled=true는 Power/SOC에서만 쓴다(speed는 false — 그라데이션 세그먼트를
+         * 직접 붙임, build_page_drive() 참고). 2026-08-05(1차): 아크가 중앙 숫자 라벨과
+         * 겹친다는 피드백으로 폭 14->16, 반지름 -34->-22로 조정. 2026-08-05(2차): "그래도
+         * 좁은 느낌" 피드백으로 폭 16->20, 반지름 -22->-24로 한 번 더 키움 —
+         * scripts/gen_gauge_face.py의 Power/SOC draw_gauge_face(track_r_mod=24, track_w=20)
+         * 호출과 반드시 같은 값이어야 baked 트랙과 라이브 아크가 겹쳐 보인다. */
+        lv_meter_indicator_t *value_indic = lv_meter_add_arc(meter, scale, 20, UI_COLOR_CYAN, -24);
         lv_meter_set_indicator_start_value(meter, value_indic, min);
         lv_meter_set_indicator_end_value(meter, value_indic, min);
         if (value_indic_out) *value_indic_out = value_indic;
@@ -193,19 +216,19 @@ static void build_page_drive(lv_obj_t *tv)
     lv_obj_t *page = make_page(tv, 0);
     pages[0] = page;
 
-    /* 게이지 뒤에 까는 정적 글로우 배경 (매 프레임 재계산 없음 — 한 번 그려진 비트맵 blit) */
-    lv_obj_t *glow_speed = make_glow_bg(page, &ui_glow_speed, 280);
-    lv_obj_align(glow_speed, LV_ALIGN_CENTER, 0, -20);
-
-    /* 속도 게이지: 0~200km/h, 10단위 눈금/20단위 숫자, 160~200 레드존(장식용 UI 스케일).
-     * 값 아크는 여기서 직접 그라데이션 세그먼트로 붙이므로 value_arc_enabled=false. */
+    /* 속도 게이지: 0~200km/h, 값 아크는 여기서 직접 그라데이션 세그먼트로 붙이므로
+     * value_arc_enabled=false. */
     lv_meter_scale_t *speed_scale = NULL;
-    meter_speed = make_gauge_meter(page, 280, 0, SPEED_GAUGE_MAX_KMH, 21, 2,
-                                    SPEED_GAUGE_REDLINE_START, SPEED_GAUGE_MAX_KMH,
-                                    false, NULL, &speed_scale);
+    meter_speed = make_gauge_meter(page, 280, 0, SPEED_GAUGE_MAX_KMH, false, NULL, &speed_scale);
     lv_obj_align(meter_speed, LV_ALIGN_CENTER, 0, -20);
-    /* 배경을 투명하게 해서 뒤에 깐 글로우 이미지가 다이얼 면으로 그대로 비치게 함 */
     lv_obj_set_style_bg_opa(meter_speed, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    /* 다이얼 페이스(눈금/숫자/트랙/레드존/글로우 전부 포함) 정적 이미지 — 400x400 캔버스가
+     * 280px 게이지보다 넉넉해서(숫자 라벨 여백), 메타 위젯 중심에 맞춰 정렬한 뒤 배경으로
+     * 내려서 라이브 값 아크가 그 위에 그려지게 함(gen_gauge_face.py 참고). */
+    lv_obj_t *face_speed = make_gauge_face_bg(page, &ui_gauge_speed_face);
+    lv_obj_align_to(face_speed, meter_speed, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_move_background(face_speed);
 
     /* 진한 블루(저값) -> 시안(고값)으로 이어지는 8구간 그라데이션 값 아크 */
     for (int i = 0; i < UI_SPEED_GRAD_SEGMENTS; i++) {
@@ -286,22 +309,26 @@ static void build_page_battery(lv_obj_t *tv)
      * 기준으로 앵커를 바꿈. (2) 게이지 2개가 양끝+맨위에 몰려 답답해 보인다는 피드백 —
      * 크기를 줄이고(220->200) 여백을 키워서(가로 36->50, 위 8->24) 더 안정적으로 배치. */
 #define UI_BATTERY_GAUGE_SIZE 200
-#define UI_BATTERY_GAUGE_MARGIN_X 50
-#define UI_BATTERY_GAUGE_MARGIN_Y 24
-
-    /* 게이지 2개(왼쪽 Power, 오른쪽 SOC) 뒤에 까는 정적 글로우 배경 — ui_glow_soc은 신호별
-     * 콘텐츠가 있는 이미지가 아니라 범용 방사형 글로우라(scripts/gen_glow_image.py) 두 곳에
-     * 재사용해도 무방함 (새 이미지 에셋 안 만듦) */
-    lv_obj_t *glow_power = make_glow_bg(page, &ui_glow_soc, UI_BATTERY_GAUGE_SIZE);
-    lv_obj_align(glow_power, LV_ALIGN_TOP_LEFT, UI_BATTERY_GAUGE_MARGIN_X, UI_BATTERY_GAUGE_MARGIN_Y);
-    lv_obj_t *glow_soc = make_glow_bg(page, &ui_glow_soc, UI_BATTERY_GAUGE_SIZE);
-    lv_obj_align(glow_soc, LV_ALIGN_TOP_RIGHT, -UI_BATTERY_GAUGE_MARGIN_X, UI_BATTERY_GAUGE_MARGIN_Y);
+/* 2026-08-04: 다이얼 페이스 이미지(300px)가 실제 메터(200px)보다 50px씩 더 커서(눈금
+ * 숫자 여백), MARGIN_X/Y가 너무 작으면 이미지 위쪽/가장자리가 화면 밖으로 잘림 — 실기기
+ * 확인 후 위로 최소 50 이상 확보 + 가운데 쪽으로 더 모으도록 여백을 키움
+ * (가로 50->90, 위 24->56). */
+#define UI_BATTERY_GAUGE_MARGIN_X 90
+#define UI_BATTERY_GAUGE_MARGIN_Y 56
 
     /* Power 게이지: 0~100kW 표시 스케일(UI_POWER_GAUGE_MAX_KW, 실차 스펙 아님), 레드존 없음 */
-    meter_power = make_gauge_meter(page, UI_BATTERY_GAUGE_SIZE, 0, UI_POWER_GAUGE_MAX_KW, 11, 2, 0, 0,
+    meter_power = make_gauge_meter(page, UI_BATTERY_GAUGE_SIZE, 0, UI_POWER_GAUGE_MAX_KW,
                                     true, &power_value_indic, NULL);
     lv_obj_align(meter_power, LV_ALIGN_TOP_LEFT, UI_BATTERY_GAUGE_MARGIN_X, UI_BATTERY_GAUGE_MARGIN_Y);
     lv_obj_set_style_bg_opa(meter_power, LV_OPA_TRANSP, LV_PART_MAIN);
+
+    /* 다이얼 페이스(왼쪽 Power, 오른쪽 SOC) — 300x300 캔버스가 200px 게이지 기준으로
+     * 구워져 있음(gen_gauge_face.py). Power는 레드존 없는 버전, SOC는 저잔량 경고구역
+     * (0~UI_SOC_LOW_PCT) 포함 버전으로 서로 다른 이미지를 씀. 메터 위젯 중심에 맞춰
+     * 정렬한 뒤 배경으로 내림. */
+    lv_obj_t *face_power = make_gauge_face_bg(page, &ui_gauge_power_face);
+    lv_obj_align_to(face_power, meter_power, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_move_background(face_power);
 
     lbl_power_kw = lv_label_create(page);
     lv_obj_add_style(lbl_power_kw, &ui_style_label_big, 0);
@@ -343,16 +370,25 @@ static void build_page_battery(lv_obj_t *tv)
     lv_obj_set_style_bg_opa(bar_regen, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_align_to(bar_regen, meter_power, LV_ALIGN_OUT_BOTTOM_MID, 0, 40);
 
-    /* SOC 게이지: 0~100%, 10단위 눈금/20단위 숫자, 0~20 레드존(저잔량 경고, UI_SOC_LOW_PCT와 동일 기준) */
-    meter_soc = make_gauge_meter(page, UI_BATTERY_GAUGE_SIZE, 0, 100, 11, 2, 0, UI_SOC_LOW_PCT,
-                                  true, &soc_value_indic, NULL);
+    /* SOC 게이지: 0~100%, 0~20 레드존(저잔량 경고, UI_SOC_LOW_PCT와 동일 기준 — 다이얼 이미지에
+     * 이미 구워져 있음, main/ui.c에서는 값 아크 색만 저잔량 시 RED로 전환) */
+    meter_soc = make_gauge_meter(page, UI_BATTERY_GAUGE_SIZE, 0, 100, true, &soc_value_indic, NULL);
     lv_obj_align(meter_soc, LV_ALIGN_TOP_RIGHT, -UI_BATTERY_GAUGE_MARGIN_X, UI_BATTERY_GAUGE_MARGIN_Y);
     lv_obj_set_style_bg_opa(meter_soc, LV_OPA_TRANSP, LV_PART_MAIN);
 
+    lv_obj_t *face_soc = make_gauge_face_bg(page, &ui_gauge_soc_face);
+    lv_obj_align_to(face_soc, meter_soc, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_move_background(face_soc);
+
     lbl_soc_pct = lv_label_create(page);
     lv_obj_add_style(lbl_soc_pct, &ui_style_label_big, 0);
-    lv_label_set_text(lbl_soc_pct, "0%");
-    lv_obj_align_to(lbl_soc_pct, meter_soc, LV_ALIGN_CENTER, 0, 0);
+    lv_label_set_text(lbl_soc_pct, "0");
+    lv_obj_align_to(lbl_soc_pct, meter_soc, LV_ALIGN_CENTER, 0, -14);
+
+    lbl_soc_unit = lv_label_create(page);
+    lv_obj_add_style(lbl_soc_unit, &ui_style_label_small, 0);
+    lv_label_set_text(lbl_soc_unit, "%");
+    lv_obj_align_to(lbl_soc_unit, lbl_soc_pct, LV_ALIGN_OUT_BOTTOM_MID, 0, 2);
 
     /* Pack Voltage — Range는 2026-08-04부터 page1 ODO/RANGE/TRIP 통합 하단바로 이동해서
      * page2엔 이제 이 카드 하나만 남음, 가운데로 재배치. */
@@ -384,59 +420,71 @@ static void build_page_diag(lv_obj_t *tv)
     lv_label_set_text(lbl_dtc_code, "DTC: OK");
     lv_obj_center(lbl_dtc_code);
 
-    /* 남는 공간을 채우는 정보 카드 2개(전압/온도) — 가운데 정렬된 큰 카드로 가시성 강화 */
-    lv_obj_t *info_row = lv_obj_create(page);
-    lv_obj_remove_style_all(info_row);
-    lv_obj_set_size(info_row, 800 - 32, 160);
-    lv_obj_set_flex_flow(info_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(info_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_align(info_row, LV_ALIGN_CENTER, 0, 30);
-    lv_obj_clear_flag(info_row, LV_OBJ_FLAG_SCROLLABLE);
+    /* Pack Voltage/Sys Temp 막대 게이지 2개를 세로로 쌓음 — 각 행은 [캡션/값 라벨 한 줄] +
+     * [막대 트랙 홈 이미지(340x130)]. DTC 배너(top16,height64 -> bottom80) 아래부터 시작.
+     * ROW_GAP은 캡션 줄(약 26px) + 여유를 감안해서 잡음. */
+#define UI_DIAG_ROW1_FACE_Y 126
+#define UI_DIAG_ROW_GAP 30
 
-    lv_obj_t *volt_card = lv_obj_create(info_row);
-    lv_obj_remove_style_all(volt_card);
-    lv_obj_set_size(volt_card, 220, 140);
-    lv_obj_set_style_radius(volt_card, 12, 0);
-    lv_obj_set_style_bg_color(volt_card, UI_COLOR_TEXT_SEC, 0);
-    lv_obj_set_style_bg_opa(volt_card, LV_OPA_10, 0);
-    lv_obj_set_style_border_width(volt_card, 1, 0);
-    lv_obj_set_style_border_color(volt_card, UI_COLOR_TEXT_SEC, 0);
-    lv_obj_set_style_border_opa(volt_card, LV_OPA_40, 0);
-    lv_obj_clear_flag(volt_card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *face_volt = make_gauge_face_bg(page, &ui_gauge_volt_face);
+    lv_obj_align(face_volt, LV_ALIGN_TOP_MID, 0, UI_DIAG_ROW1_FACE_Y);
 
-    lv_obj_t *lbl_volt_title = lv_label_create(volt_card);
-    lv_obj_add_style(lbl_volt_title, &ui_style_label_small, 0);
-    lv_obj_set_style_text_color(lbl_volt_title, UI_COLOR_TEXT_SEC, 0);
-    lv_label_set_text(lbl_volt_title, "Pack Voltage");
-    lv_obj_align(lbl_volt_title, LV_ALIGN_TOP_MID, 0, 16);
+    lv_obj_t *lbl_volt_caption = lv_label_create(page);
+    lv_obj_add_style(lbl_volt_caption, &ui_style_label_small, 0);
+    lv_obj_set_style_text_color(lbl_volt_caption, UI_COLOR_TEXT_SEC, 0);
+    lv_label_set_text(lbl_volt_caption, "PACK VOLTAGE");
+    lv_obj_align_to(lbl_volt_caption, face_volt, LV_ALIGN_OUT_TOP_LEFT, 20, -6);
 
-    lbl_pack_volt2 = lv_label_create(volt_card);
-    lv_obj_add_style(lbl_pack_volt2, &ui_style_label_big, 0);
+    lbl_pack_volt2 = lv_label_create(page);
+    lv_obj_add_style(lbl_pack_volt2, &ui_style_label_mid, 0);
     lv_label_set_text(lbl_pack_volt2, "-- V");
-    lv_obj_align(lbl_pack_volt2, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_align_to(lbl_pack_volt2, face_volt, LV_ALIGN_OUT_TOP_RIGHT, -20, -10);
 
-    /* sys_temp_c(placeholder, CAN 0x307) — 경고 시 카드 테두리/텍스트를 RED로 전환 */
-    card_sys_temp = lv_obj_create(info_row);
-    lv_obj_remove_style_all(card_sys_temp);
-    lv_obj_set_size(card_sys_temp, 220, 140);
-    lv_obj_set_style_radius(card_sys_temp, 12, 0);
-    lv_obj_set_style_bg_color(card_sys_temp, UI_COLOR_TEXT_SEC, 0);
-    lv_obj_set_style_bg_opa(card_sys_temp, LV_OPA_10, 0);
-    lv_obj_set_style_border_width(card_sys_temp, 1, 0);
-    lv_obj_set_style_border_color(card_sys_temp, UI_COLOR_TEXT_SEC, 0);
-    lv_obj_set_style_border_opa(card_sys_temp, LV_OPA_40, 0);
-    lv_obj_clear_flag(card_sys_temp, LV_OBJ_FLAG_SCROLLABLE);
+    /* 트랙 홈 이미지 위에 겹치는 라이브 채움 막대 — main part는 투명(baked 트랙이 그대로
+     * 비쳐 보임), indicator만 채움 색. 오프셋(-31)은 gen_gauge_face.py의
+     * BAR_GROOVE_CY(34) - BAR_CANVAS_H/2(65) 그대로(스크립트 상단 주석과 반드시 일치시킬 것). */
+    bar_volt = lv_bar_create(page);
+    lv_obj_set_size(bar_volt, UI_BAR_GAUGE_GROOVE_W, UI_BAR_GAUGE_GROOVE_H);
+    lv_bar_set_range(bar_volt, 0, 80);
+    lv_bar_set_value(bar_volt, 0, LV_ANIM_OFF);
+    lv_obj_set_style_radius(bar_volt, UI_BAR_GAUGE_GROOVE_H / 2, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(bar_volt, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar_volt, UI_BAR_GAUGE_GROOVE_H / 2, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(bar_volt, UI_COLOR_CYAN, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(bar_volt, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_align_to(bar_volt, face_volt, LV_ALIGN_CENTER, 0,
+                     UI_BAR_GAUGE_GROOVE_CY - UI_BAR_GAUGE_CANVAS_H / 2);
+    lv_obj_move_foreground(bar_volt);
 
-    lv_obj_t *lbl_temp_title = lv_label_create(card_sys_temp);
-    lv_obj_add_style(lbl_temp_title, &ui_style_label_small, 0);
-    lv_obj_set_style_text_color(lbl_temp_title, UI_COLOR_TEXT_SEC, 0);
-    lv_label_set_text(lbl_temp_title, "Sys Temp");
-    lv_obj_align(lbl_temp_title, LV_ALIGN_TOP_MID, 0, 16);
+    lv_obj_t *face_temp = make_gauge_face_bg(page, &ui_gauge_temp_face);
+    lv_obj_align(face_temp, LV_ALIGN_TOP_MID, 0, UI_DIAG_ROW1_FACE_Y + UI_BAR_GAUGE_CANVAS_H + UI_DIAG_ROW_GAP);
 
-    lbl_sys_temp = lv_label_create(card_sys_temp);
-    lv_obj_add_style(lbl_sys_temp, &ui_style_label_big, 0);
+    lv_obj_t *lbl_temp_caption = lv_label_create(page);
+    lv_obj_add_style(lbl_temp_caption, &ui_style_label_small, 0);
+    lv_obj_set_style_text_color(lbl_temp_caption, UI_COLOR_TEXT_SEC, 0);
+    lv_label_set_text(lbl_temp_caption, "SYS TEMP");
+    lv_obj_align_to(lbl_temp_caption, face_temp, LV_ALIGN_OUT_TOP_LEFT, 20, -6);
+
+    lbl_sys_temp = lv_label_create(page);
+    lv_obj_add_style(lbl_sys_temp, &ui_style_label_mid, 0);
     lv_label_set_text(lbl_sys_temp, "--");
-    lv_obj_align(lbl_sys_temp, LV_ALIGN_BOTTOM_MID, 0, -16);
+    lv_obj_align_to(lbl_sys_temp, face_temp, LV_ALIGN_OUT_TOP_RIGHT, -20, -10);
+
+    /* sys_temp_c(placeholder, CAN 0x307) — 경고 시(UI_TEMP_WARN_C 이상) 채움 막대/숫자를
+     * RED로 전환(예전 카드 테두리 색 전환과 같은 의도, anim_soc_exec_cb의 저잔량 색 전환과
+     * 동일 패턴). 위험구간 자체는 baked 이미지의 정적 빨간 스트립으로 항상 표시된다. */
+    bar_temp = lv_bar_create(page);
+    lv_obj_set_size(bar_temp, UI_BAR_GAUGE_GROOVE_W, UI_BAR_GAUGE_GROOVE_H);
+    lv_bar_set_range(bar_temp, UI_TEMP_GAUGE_MIN, UI_TEMP_GAUGE_MAX);
+    lv_bar_set_value(bar_temp, UI_TEMP_GAUGE_MIN, LV_ANIM_OFF);
+    lv_obj_set_style_radius(bar_temp, UI_BAR_GAUGE_GROOVE_H / 2, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(bar_temp, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar_temp, UI_BAR_GAUGE_GROOVE_H / 2, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(bar_temp, UI_COLOR_CYAN, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(bar_temp, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_align_to(bar_temp, face_temp, LV_ALIGN_CENTER, 0,
+                     UI_BAR_GAUGE_GROOVE_CY - UI_BAR_GAUGE_CANVAS_H / 2);
+    lv_obj_move_foreground(bar_temp);
 }
 
 /* ---------------------------------------------------------------------
@@ -636,12 +684,28 @@ void ui_init(lv_obj_t *parent)
 }
 
 /* speed/soc 게이지+숫자를 한 애니메이션으로 같이 움직여서(exec_cb 안에서 둘 다 갱신)
- * 실차 클러스터처럼 값이 순간 이동하지 않고 부드럽게 스윕되도록 한다. */
-#define UI_GAUGE_ANIM_TIME_MS 250
+ * 실차 클러스터처럼 값이 순간 이동하지 않고 부드럽게 스윕되도록 한다.
+ * 2026-08-05: "게이지/숫자 변화 반응성을 높여달라"는 피드백으로 두 가지 변경.
+ * (1) 250ms->150ms — CAN 시뮬레이터가 20ms마다 값을 갱신하는데(scripts/can_sim_kvaser.py
+ *     TICK_S) 250ms는 체감상 느리게 따라오는 느낌이 남.
+ * (2) animate_X_to()가 매번 "current = target"으로 시작점을 앞당겨 잡던 버그를 고침 —
+ *     lv_anim_start()는 같은 var+exec_cb 애니메이션을 자동으로 lv_anim_del()하고 새로
+ *     시작하므로(managed_components/lvgl__lvgl/src/misc/lv_anim.c 확인), 20ms 틱마다 값이
+ *     바뀌면 이전 애니메이션은 250ms를 다 못 채우고 계속 중간에 잘렸다. 그런데 "current"를
+ *     실제 렌더된 값이 아니라 "마지막으로 명령한 target"으로 앞당겨 놨기 때문에, 다음
+ *     애니메이션이 시작하는 순간 화면이 (중간에 있던 실제 값) -> (이전 target)으로 순간
+ *     점프했다가 다시 새 target으로 움직이는 "끊김"이 반복해서 생겼음(20ms 주기로 계속
+ *     재발하니 체감상 뚝뚝 끊기는 반응성으로 느껴짐). 각 exec_cb가 매 프레임 실제 렌더된
+ *     값을 *_current_v에 기록해두고, 다음 animate_X_to()는 거기서부터 이어서 움직이게
+ *     고쳐서 애니메이션이 중간에 끊겨도 시각적으로 연속되게 함. */
+#define UI_GAUGE_ANIM_TIME_MS 150
+
+static int32_t speed_current_v = 0;
 
 static void anim_speed_exec_cb(void *var, int32_t v)
 {
     (void)var;
+    speed_current_v = v;
     /* 세그먼트별로 [start,end] 구간 중 v로 덮이는 만큼만 채운다 — v 이전 구간은 완전히
      * 채워지고, v가 속한 구간은 부분적으로, 이후 구간은 비어있는(start=end) 채로 남는다. */
     for (int i = 0; i < UI_SPEED_GRAD_SEGMENTS; i++) {
@@ -664,7 +728,6 @@ static void anim_speed_exec_cb(void *var, int32_t v)
 static void animate_speed_to(int32_t target)
 {
     static int32_t last_target = -1;
-    static int32_t current = 0;
     if (target == last_target) return;
     last_target = target;
 
@@ -672,32 +735,33 @@ static void animate_speed_to(int32_t target)
     lv_anim_init(&a);
     lv_anim_set_var(&a, meter_speed);
     lv_anim_set_exec_cb(&a, anim_speed_exec_cb);
-    lv_anim_set_values(&a, current, target);
+    lv_anim_set_values(&a, speed_current_v, target);
     lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
-    current = target;
 }
+
+static int32_t soc_current_v = 0;
 
 static void anim_soc_exec_cb(void *var, int32_t v)
 {
     (void)var;
+    soc_current_v = v;
     lv_meter_set_indicator_end_value(meter_soc, soc_value_indic, v);
     /* lv_meter 인디케이터는 색을 바꾸는 공개 setter가 없어, 노출된(비-opaque) 구조체
      * 필드를 직접 갱신하고 무효화해서 다시 그리게 한다(공식 헤더에 문서화된 필드). */
     soc_value_indic->type_data.arc.color = (v <= UI_SOC_LOW_PCT) ? UI_COLOR_RED : UI_COLOR_CYAN;
     lv_obj_invalidate(meter_soc);
     char buf[16];
-    snprintf(buf, sizeof(buf), "%u%%", (unsigned)v);
+    snprintf(buf, sizeof(buf), "%u", (unsigned)v);
     lv_label_set_text(lbl_soc_pct, buf);
     /* speed와 동일한 이유로 매번 재정렬 필요 (자릿수 변화로 폭이 바뀜) */
-    lv_obj_align_to(lbl_soc_pct, meter_soc, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align_to(lbl_soc_pct, meter_soc, LV_ALIGN_CENTER, 0, -14);
 }
 
 static void animate_soc_to(int32_t target)
 {
     static int32_t last_target = -1;
-    static int32_t current = 0;
     if (target == last_target) return;
     last_target = target;
 
@@ -705,16 +769,18 @@ static void animate_soc_to(int32_t target)
     lv_anim_init(&a);
     lv_anim_set_var(&a, meter_soc);
     lv_anim_set_exec_cb(&a, anim_soc_exec_cb);
-    lv_anim_set_values(&a, current, target);
+    lv_anim_set_values(&a, soc_current_v, target);
     lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
-    current = target;
 }
+
+static int32_t power_current_v = 0;
 
 static void anim_power_exec_cb(void *var, int32_t v)
 {
     (void)var;
+    power_current_v = v;
     /* power_kw 실제 범위는 [0|255]지만 게이지 표시 스케일은 UI_POWER_GAUGE_MAX_KW(100) —
      * speed 게이지와 같은 패턴으로, 라벨 숫자는 실제값 그대로 찍되 게이지 아크만 clamp */
     int32_t gauge_v = v > UI_POWER_GAUGE_MAX_KW ? UI_POWER_GAUGE_MAX_KW : (v < 0 ? 0 : v);
@@ -728,7 +794,6 @@ static void anim_power_exec_cb(void *var, int32_t v)
 static void animate_power_to(int32_t target)
 {
     static int32_t last_target = -1;
-    static int32_t current = 0;
     if (target == last_target) return;
     last_target = target;
 
@@ -736,11 +801,72 @@ static void animate_power_to(int32_t target)
     lv_anim_init(&a);
     lv_anim_set_var(&a, meter_power);
     lv_anim_set_exec_cb(&a, anim_power_exec_cb);
-    lv_anim_set_values(&a, current, target);
+    lv_anim_set_values(&a, power_current_v, target);
     lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
-    current = target;
+}
+
+static int32_t volt_current_v = 0;
+
+static void anim_volt_exec_cb(void *var, int32_t v)
+{
+    (void)var;
+    volt_current_v = v;
+    lv_bar_set_value(bar_volt, v, LV_ANIM_OFF);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d V", (int)v);
+    lv_label_set_text(lbl_pack_volt2, buf);
+}
+
+static void animate_volt_to(int32_t target)
+{
+    static int32_t last_target = -1;
+    if (target == last_target) return;
+    last_target = target;
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, bar_volt);
+    lv_anim_set_exec_cb(&a, anim_volt_exec_cb);
+    lv_anim_set_values(&a, volt_current_v, target);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
+}
+
+static int32_t temp_current_v = 0;
+
+static void anim_temp_exec_cb(void *var, int32_t v)
+{
+    (void)var;
+    temp_current_v = v;
+    /* sys_temp_c 실제 범위(-20~235)가 UI_TEMP_GAUGE_MAX(120)를 넘을 수 있어 power 게이지와
+     * 동일하게 라벨은 원본 값 그대로, 막대만 clamp. */
+    int32_t bar_v = v > UI_TEMP_GAUGE_MAX ? UI_TEMP_GAUGE_MAX : (v < UI_TEMP_GAUGE_MIN ? UI_TEMP_GAUGE_MIN : v);
+    lv_bar_set_value(bar_temp, bar_v, LV_ANIM_OFF);
+    bool temp_warn = v >= UI_TEMP_WARN_C;
+    lv_obj_set_style_bg_color(bar_temp, temp_warn ? UI_COLOR_RED : UI_COLOR_CYAN, LV_PART_INDICATOR);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d C", (int)v);
+    lv_label_set_text(lbl_sys_temp, buf);
+    lv_obj_set_style_text_color(lbl_sys_temp, temp_warn ? UI_COLOR_RED : UI_COLOR_TEXT_PRI, 0);
+}
+
+static void animate_temp_to(int32_t target)
+{
+    static int32_t last_target = -1;
+    if (target == last_target) return;
+    last_target = target;
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, bar_temp);
+    lv_anim_set_exec_cb(&a, anim_temp_exec_cb);
+    lv_anim_set_values(&a, temp_current_v, target);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
+    lv_anim_start(&a);
 }
 
 void ui_update(void)
@@ -789,15 +915,8 @@ void ui_update(void)
         lv_obj_set_style_bg_opa(banner_dtc, LV_OPA_50, 0);
     }
 
-    snprintf(buf, sizeof(buf), "%.1f V", d.pack_volt);
-    lv_label_set_text(lbl_pack_volt2, buf);
-
-    snprintf(buf, sizeof(buf), "%d C", (int)d.sys_temp_c);
-    lv_label_set_text(lbl_sys_temp, buf);
-    bool temp_warn = d.sys_temp_c >= UI_TEMP_WARN_C;
-    lv_obj_set_style_border_color(card_sys_temp, temp_warn ? UI_COLOR_RED : UI_COLOR_TEXT_SEC, 0);
-    lv_obj_set_style_border_opa(card_sys_temp, temp_warn ? LV_OPA_COVER : LV_OPA_40, 0);
-    lv_obj_set_style_text_color(lbl_sys_temp, temp_warn ? UI_COLOR_RED : UI_COLOR_TEXT_PRI, 0);
+    animate_volt_to((int32_t)(d.pack_volt + 0.5f));
+    animate_temp_to((int32_t)d.sys_temp_c);
 
     /* Page 4 */
     lv_obj_set_style_bg_color(dot_ble, d.ble_connected ? UI_COLOR_GREEN : UI_COLOR_TEXT_SEC, 0);
