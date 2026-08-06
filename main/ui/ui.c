@@ -697,8 +697,16 @@ void ui_init(lv_obj_t *parent)
  *     점프했다가 다시 새 target으로 움직이는 "끊김"이 반복해서 생겼음(20ms 주기로 계속
  *     재발하니 체감상 뚝뚝 끊기는 반응성으로 느껴짐). 각 exec_cb가 매 프레임 실제 렌더된
  *     값을 *_current_v에 기록해두고, 다음 animate_X_to()는 거기서부터 이어서 움직이게
- *     고쳐서 애니메이션이 중간에 끊겨도 시각적으로 연속되게 함. */
-#define UI_GAUGE_ANIM_TIME_MS 150
+ *     고쳐서 애니메이션이 중간에 끊겨도 시각적으로 연속되게 함.
+ * 2026-08-05(2차): 5개 게이지가 전부 같은 150ms를 썼는데, 실제 값 갱신 주기가
+ * docs/design/can-signals.md 기준으로 신호마다 다르다 — InvMsg1(speed/power/regen,
+ * 100ms) vs InvMsg2(soc/volt/temp, 200ms). 애니메이션 시간이 갱신 주기보다 길면
+ * (예: speed는 100ms마다 새 목표가 오는데 애니메이션은 150ms) 스윕이 한 번도 다
+ * 끝나지 못하고 계속 방향을 바꿔가며 이어 붙어서 "끊겨 보인다"는 피드백 — 각 신호가
+ * 속한 CAN 메시지 주기보다 살짝 짧게(여유 10~20ms) 잡아서, 스윕이 다음 갱신 전에
+ * 확실히 도착하고 잠깐 쉬었다가 다음 목표로 가게 함. */
+#define UI_GAUGE_ANIM_TIME_FAST_MS 90   /* InvMsg1 소스(speed, power) — 100ms 주기 */
+#define UI_GAUGE_ANIM_TIME_SLOW_MS 180  /* InvMsg2 소스(soc, volt, temp) — 200ms 주기 */
 
 static int32_t speed_current_v = 0;
 
@@ -736,7 +744,7 @@ static void animate_speed_to(int32_t target)
     lv_anim_set_var(&a, meter_speed);
     lv_anim_set_exec_cb(&a, anim_speed_exec_cb);
     lv_anim_set_values(&a, speed_current_v, target);
-    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_FAST_MS);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
 }
@@ -770,7 +778,7 @@ static void animate_soc_to(int32_t target)
     lv_anim_set_var(&a, meter_soc);
     lv_anim_set_exec_cb(&a, anim_soc_exec_cb);
     lv_anim_set_values(&a, soc_current_v, target);
-    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_SLOW_MS);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
 }
@@ -802,7 +810,7 @@ static void animate_power_to(int32_t target)
     lv_anim_set_var(&a, meter_power);
     lv_anim_set_exec_cb(&a, anim_power_exec_cb);
     lv_anim_set_values(&a, power_current_v, target);
-    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_FAST_MS);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
 }
@@ -830,7 +838,7 @@ static void animate_volt_to(int32_t target)
     lv_anim_set_var(&a, bar_volt);
     lv_anim_set_exec_cb(&a, anim_volt_exec_cb);
     lv_anim_set_values(&a, volt_current_v, target);
-    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_SLOW_MS);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
 }
@@ -864,7 +872,7 @@ static void animate_temp_to(int32_t target)
     lv_anim_set_var(&a, bar_temp);
     lv_anim_set_exec_cb(&a, anim_temp_exec_cb);
     lv_anim_set_values(&a, temp_current_v, target);
-    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_MS);
+    lv_anim_set_time(&a, UI_GAUGE_ANIM_TIME_SLOW_MS);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
 }
