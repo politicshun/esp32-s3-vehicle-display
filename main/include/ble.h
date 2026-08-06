@@ -22,6 +22,15 @@ extern uint16_t g_ble_conn_handle;
 extern uint16_t g_vehicle_chr_val_handle;
 
 /*
+ * 2026-08-06: 앱 팀용 packed 바이너리(VehicleBlePacket_t) characteristic은 그대로 두고,
+ * 보고/데모용으로 nRF Connect 등 범용 스캐너 앱에서 바로 읽을 수 있는 UTF-8 텍스트
+ * characteristic을 별도로 추가함(같은 서비스, 새 UUID) — main/ble.c 참고.
+ * 2026-07-31에 썼다가 폐기했던 텍스트 포맷과 달리 이번엔 필드 10개 전부 포함.
+ * 이 characteristic의 value handle. GATT 서비스 등록 완료 후 채워짐.
+ */
+extern uint16_t g_vehicle_text_chr_val_handle;
+
+/*
  * 2026-08-03: 커스텀 앱 개발 단계로 넘어가면서, 2026-07-31에 테스트용으로 썼던
  * ASCII 텍스트 payload(nRF Connect 등 범용 스캐너용)를 폐기하고 packed 바이너리로
  * 되돌림 — docs/design/ble-gatt.md의 앱 팀 핸드오프 스펙과 1:1로 맞춘 최종 포맷.

@@ -1,6 +1,7 @@
 #include "ble.h"
 #include "vehicle_data.h"
 #include "esp_log.h"
+#include <stdio.h>  /* snprintf — 텍스트 characteristic (build_vehicle_text) */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -24,6 +25,7 @@ _Static_assert(sizeof(VehicleBlePacket_t) == 17, "VehicleBlePacket_t 크기가 1
 /* ---- 외부(ble.h)에 노출되는 전역 상태 ---- */
 uint16_t g_ble_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 uint16_t g_vehicle_chr_val_handle = 0;
+uint16_t g_vehicle_text_chr_val_handle = 0;
 
 /* ---- 이 프로젝트 전용 커스텀 UUID ----
  * 2026-08-03 양산용으로 재발급(OS 난수 생성, `[guid]::NewGuid()`) —
@@ -40,6 +42,15 @@ static const ble_uuid128_t vehicle_svc_uuid =
 static const ble_uuid128_t vehicle_chr_uuid =
     BLE_UUID128_INIT(0x7c, 0x5c, 0x6e, 0x87, 0xd2, 0x9d, 0xb7, 0xb7,
                       0x4b, 0x4f, 0xb1, 0xd3, 0xdd, 0x6b, 0x89, 0x95);
+
+/* 2026-08-06: 보고/데모용 텍스트 characteristic UUID (OS 난수 생성, `[guid]::NewGuid()`,
+ * 위 vehicle_chr_uuid와 동일한 방식). 같은 서비스(vehicle_svc_uuid) 아래에 추가되는
+ * 두 번째 characteristic이라 앱 팀의 기존 packed 바이너리 characteristic
+ * (vehicle_chr_uuid)에는 영향 없음.
+ * Char UUID: ef143c25-4b04-4596-942d-1f10b5d3a1cb (docs/design/ble-gatt.md 참고) */
+static const ble_uuid128_t vehicle_text_chr_uuid =
+    BLE_UUID128_INIT(0xcb, 0xa1, 0xd3, 0xb5, 0x10, 0x1f, 0x2d, 0x94,
+                      0x96, 0x45, 0x04, 0x4b, 0x25, 0x3c, 0x14, 0xef);
 
 /* 전방 선언: ble_app_advertise()에서 정의보다 먼저 참조되므로 필요 */
 int ble_gap_event(struct ble_gap_event *event, void *arg);
@@ -76,6 +87,52 @@ static int vehicle_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
     return (rc == 0) ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
 }
 
+/* 2026-08-06: 보고/데모용 — nRF Connect 등 범용 스캐너 앱이 별도 파서 없이 바로
+ * 읽을 수 있는 UTF-8 텍스트로 VehicleData_t 전체(10개 필드)를 사람이 읽기 쉬운
+ * 형태로 직렬화한다. 2026-07-31에 썼다가 폐기했던 버전(SPD/SOC/VOLT/DTC 4개뿐)과
+ * 달리 drive_mode/odo_km/range_km/power_kw/regen_kw/sys_temp_c까지 전부 포함.
+ * drive_mode는 앱 팀 바이너리 스펙처럼 raw 숫자(0~3)가 아니라 P/R/N/D 글자로 —
+ * "실제 값으로 구분되어 보이게" 하는 게 목적이라 숫자보다 글자가 사람이 읽기 낫다.
+ * pack_volt/power_kw/regen_kw는 VehicleData_t가 float지만 실제로는 정수 해상도라
+ * (docs/hardware/cluster.dbc factor1, main/include/ble.h 기존 주석 참고) 소수점 없이 출력. */
+static const char *drive_mode_letter(uint8_t mode) {
+    switch (mode) {
+        case 0: return "P";
+        case 1: return "R";
+        case 2: return "N";
+        case 3: return "D";
+        default: return "?";
+    }
+}
+
+static int build_vehicle_text(char *buf, size_t buf_size, const VehicleData_t *d) {
+    return snprintf(buf, buf_size,
+        "SPD:%dkm/h SOC:%u%% VOLT:%.0fV DTC:%u MODE:%s "
+        "ODO:%lukm RANGE:%ukm PWR:%.0fkW REGEN:%.0fkW TEMP:%dC",
+        d->speed, d->soc, d->pack_volt, d->dtc_code, drive_mode_letter(d->drive_mode),
+        (unsigned long)d->odo_km, d->range_km, d->power_kw, d->regen_kw, d->sys_temp_c);
+}
+
+/* ---- GATT characteristic access 콜백 (텍스트 characteristic, 스마트폰이 Read 요청 시) ---- */
+static int vehicle_text_chr_access_cb(uint16_t conn_handle, uint16_t attr_handle,
+                                       struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+
+    VehicleData_t data;
+    vehicle_data_get(&data);
+
+    char text[128];
+    int len = build_vehicle_text(text, sizeof(text), &data);
+    if (len < 0) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+
+    int rc = os_mbuf_append(ctxt->om, text, (uint16_t)len);
+    return (rc == 0) ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+}
+
 /* ---- GATT 서비스 테이블 ---- */
 static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
     {
@@ -88,6 +145,16 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                 .val_handle = &g_vehicle_chr_val_handle,
                 /* 2026-08-03: Just Works bonding 적용(사용자 확인) — Read/Notify 모두 암호화된
                  * 링크에서만 허용(_ENC 플래그). MITM 인증까지는 요구하지 않음(Just Works 특성). */
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY |
+                         BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,
+            },
+            {
+                /* 2026-08-06: 보고/데모용 텍스트 characteristic — 같은 서비스 아래
+                 * 두 번째 characteristic으로 추가, 위 바이너리 characteristic과
+                 * 보안 정책(Just Works, 암호화 필수)은 동일하게 맞춤. */
+                .uuid = &vehicle_text_chr_uuid.u,
+                .access_cb = vehicle_text_chr_access_cb,
+                .val_handle = &g_vehicle_text_chr_val_handle,
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY |
                          BLE_GATT_CHR_F_READ_ENC | BLE_GATT_CHR_F_NOTIFY_INDICATE_ENC,
             },
@@ -263,6 +330,21 @@ void ble_sync_task(void *pvParameters) {
                                                   g_vehicle_chr_val_handle, om);
                 if (rc != 0) {
                     ESP_LOGW(TAG, "notify 실패: rc=%d", rc);
+                }
+            }
+
+            /* 2026-08-06: 보고/데모용 텍스트 characteristic도 같은 주기로 notify —
+             * nRF Connect 등에서 구독하면 화면에서 값이 실시간으로 갱신되는 걸 바로 볼 수 있음. */
+            char text[128];
+            int text_len = build_vehicle_text(text, sizeof(text), &data);
+            if (text_len > 0) {
+                struct os_mbuf *text_om = ble_hs_mbuf_from_flat(text, (uint16_t)text_len);
+                if (text_om != NULL) {
+                    int rc = ble_gatts_notify_custom(g_ble_conn_handle,
+                                                      g_vehicle_text_chr_val_handle, text_om);
+                    if (rc != 0) {
+                        ESP_LOGW(TAG, "텍스트 notify 실패: rc=%d", rc);
+                    }
                 }
             }
         }

@@ -9,7 +9,12 @@
   - Service: `d8be14dc-6df4-4aae-9750-65c274746c87`
   - Characteristic (vehicle data, Read+Notify): `95896bdd-d3b1-4f4b-b7b7-9dd2876e5c7c`
   - 앱 팀에는 위 문자열 그대로(하이픈 포함, 대소문자 무관) 전달. 이전 placeholder UUID(`0x2f,0x1a,0x9e,...`)는 폐기.
-- Characteristic 권한: Read + Notify (Write 없음 — 앱→차량 방향 커맨드는 아직 요구사항 없음)
+- **2026-08-06 추가 — 보고/데모용 텍스트 characteristic (앱 팀 스펙과 무관, 아래 "보고/데모용" 절 참고):**
+  - Characteristic (vehicle data, 텍스트, Read+Notify): `ef143c25-4b04-4596-942d-1f10b5d3a1cb`
+  - 같은 Service UUID 아래 두 번째 characteristic. 앱 팀은 이 UUID를 몰라도 됨 — 기존 바이너리
+    characteristic(위 `95896bdd-...`)만 구현하면 충분.
+- Characteristic 권한: Read + Notify (Write 없음 — 앱→차량 방향 커맨드는 아직 요구사항 없음). 텍스트
+  characteristic도 동일한 권한/보안 정책.
 - Notify 주기: 500ms 고정 (`main/ble.c` `ble_sync_task`)
 - 연결 상태는 `vehicle_data.ble_connected`에 반영
 - 선호 MTU: 247 (`ble_att_set_preferred_mtu`) — 협상 실패 시 기본 23바이트(페이로드 20바이트)로 폴백되지만
@@ -38,6 +43,36 @@
 이전 리비전(2026-07-31, ASCII 텍스트 `"SPD:%dkm/h SOC:%u%% VOLT:%.1fV DTC:%u"`)은 nRF Connect 등
 범용 스캐너 앱으로 테스트하던 단계 전용이었고 폐기됨. 그 텍스트에는 drive_mode/odo_km/range_km/
 power_kw/regen_kw/sys_temp_c가 빠져있었는데, 이번 바이너리 전환에서 전부 포함시킴.
+
+## 보고/데모용 텍스트 characteristic (2026-08-06 추가)
+
+위 packed 바이너리는 앱 팀 컴패니언 앱 전용 스펙으로 그대로 유지하고, **별도로** 보고/데모
+목적의 텍스트 characteristic을 같은 서비스에 추가했다 — nRF Connect 등 범용 스캐너 앱에서
+별도 파서 없이 UTF-8 그대로 읽으면 값이 사람이 읽기 좋은 형태로 바로 보임. 앱 팀 스펙(위 표)에는
+영향 없음 — 앱 팀은 이 characteristic을 몰라도 됨.
+
+UUID: `ef143c25-4b04-4596-942d-1f10b5d3a1cb` (`main/ble.c` `vehicle_text_chr_uuid`)
+
+포맷 예시(`build_vehicle_text()`, `main/ble.c`):
+```
+SPD:120km/h SOC:80% VOLT:72V DTC:0 MODE:D ODO:12345km RANGE:250km PWR:45kW REGEN:10kW TEMP:35C
+```
+
+- 바이너리 characteristic과 동일한 10개 필드 전부 포함(2026-07-31에 폐기했던 구버전 텍스트
+  포맷과 달리 drive_mode/odo_km/range_km/power_kw/regen_kw/sys_temp_c도 포함).
+- `drive_mode`는 raw 숫자(0~3) 대신 `P`/`R`/`N`/`D` 글자로 표시(사람이 읽기 좋게).
+- `pack_volt`/`power_kw`/`regen_kw`는 `VehicleData_t`에서 float이지만 실제로는 정수 해상도라
+  소수점 없이 정수로 표시.
+- Notify 주기는 바이너리 characteristic과 동일(500ms, `ble_sync_task`).
+- 보안 정책도 바이너리 characteristic과 동일(Just Works, 암호화된 링크에서만 Read/Notify).
+- **2026-08-06 실기기 확인 — Notify로 볼 때 "SPD:...SOC:...%"까지만 보이고 뒤가 잘림**: MTU
+  협상이 안 된 연결(기본 23바이트=페이로드 20바이트)에서는 Notify가 그 이상을 잘라버리고
+  재조립을 안 함(BLE 스펙상 Notify는 원래 그럼, 위 "Notify 주기" 항목 위쪽 `ble_att_set_preferred_mtu`
+  주석 참고). MTU 협상은 클라이언트(폰 앱)가 먼저 요청해야 하는데 서버(이 기기)가 강제할 방법이
+  없음. **Read는 "Read Long" 절차로 MTU와 무관하게 항상 전체 문자열을 재조립해서 주므로,
+  nRF Connect 등에서 전체 값을 보려면 Notify 구독보다 Read를 쓸 것** — 실기기로 Read는 전체가
+  정상적으로 뜨는 것까지 확인함. Notify로도 전체를 보고 싶으면 앱에서 MTU를 100바이트 이상으로
+  수동 요청해야 함(앱마다 지원 여부 다름).
 
 ## 페어링/보안 (2026-08-03 확정 — Just Works bonding)
 
