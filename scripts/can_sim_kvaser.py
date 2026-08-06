@@ -1,9 +1,18 @@
 # scripts/can_sim_kvaser.py
-# KVASER 실물 어댑터로 실제 구동 사이클(정차->가속->순항->감속->후진->정차, 반복)을
-# 흉내내서 InvMsg1(0x100, 100ms)/InvMsg2(0x200, 200ms)를 계속 쏴주는 벤치 테스트용 시뮬레이터.
+# KVASER 실물 어댑터로 InvMsg1(0x100, 100ms)/InvMsg2(0x200, 200ms)를 계속 쏴주는
+# 벤치 테스트용 시뮬레이터.
 # CANKing의 Generator는 "고정값 주기 반복"만 되고 값이 시간에 따라 변하는 건 못 해서,
 # docs/hardware/cluster.dbc를 cantools로 읽어 실측 스펙(factor/offset/범위) 그대로
 # 인코딩하고, python-can의 kvaser 백엔드(canlib32.dll)로 실제 버스에 낸다.
+#
+# 2026-08-05: 원래는 정차->가속->순항->감속->후진 사이클로 "그럴듯한 주행"을 흉내냈는데,
+# 실주행처럼 보일 필요는 없고 게이지/숫자가 값 변화에 반응성 좋게+매끄럽게 따라오는지만
+# 확인하면 된다는 피드백 — 구간별 상태 머신을 버리고, 모든 신호를 각자 다른 주기의
+# sin파로 "항상 동시에" 움직이게 바꿈(한 신호가 멈춰있는 구간이 없음). 저마다 주기/위상을
+# 다르게 잡아서 전부 같이 오르내리지 않고 서로 엇갈리게 움직이도록 함 — 그래야 여러
+# 게이지가 동시에 다른 방향으로 바뀌는 "역동적인" 그림이 나옴. SOC/Temp는 진폭을
+# UI_SOC_LOW_PCT(20%)/UI_TEMP_WARN_C(60도) 경고 임계값을 주기적으로 넘나들도록 잡아서
+# 경고색 전환(main/ui/ui.c anim_soc_exec_cb/anim_temp_exec_cb) 로직도 같이 흔들어본다.
 #
 # 사용 전 확인:
 #   python -m pip install cantools python-can
@@ -21,90 +30,66 @@ DBC_PATH = Path(__file__).resolve().parent.parent / "docs" / "hardware" / "clust
 
 MSG1_PERIOD_S = 0.100  # InvMsg1 (docs/hardware/cluster.dbc GenMsgCycleTime와 동일)
 MSG2_PERIOD_S = 0.200  # InvMsg2
-TICK_S = 0.02          # 시뮬레이션 상태 갱신 주기 (LVGL 쪽 20ms 루프와 맞춤 — 필수는 아님)
+TICK_S = 0.02          # 갱신 주기는 20ms로 설정했음. (LVGL 갱신과 일치시킴)
 
-# 주행 사이클: (phase 이름, 지속시간(s), DriveMode 0=P 1=R 2=N 3=D)
-CYCLE = [
-    ("PARK",         5.0, 0),
-    ("ACCEL",       10.0, 3),
-    ("CRUISE",      10.0, 3),
-    ("DECEL",        8.0, 3),
-    ("REVERSE",      5.0, 1),
-]
-CYCLE_TOTAL_S = sum(seg[1] for seg in CYCLE)
+DRIVE_MODE = 3  # 항상 D — 기어 배지는 애니메이션이 없어서(즉시 전환) 반응성 테스트와 무관, 흔들면 오히려 헷갈림
 
-TARGET_CRUISE_KMH = 80.0
-REVERSE_KMH = -5.0
-FULL_RANGE_KM = 300.0  # SOC 100% 기준 예상 주행가능거리 (표시용 가정치)
+
+def _osc(t: float, center: float, amplitude: float, period_s: float, phase_rad: float) -> float:
+    """center를 기준으로 +-amplitude만큼 sin파로 진동하는 값. 신호마다 period_s/phase_rad를
+    다르게 줘서 서로 다른 타이밍에 오르내리게 만든다(전부 같이 움직이면 "역동적"이라기보단
+    단조로워 보임)."""
+    return center + amplitude * math.sin(2.0 * math.pi * t / period_s + phase_rad)
 
 
 class DriveState:
-    """실제 구동 사이클을 시간(t)에 따라 흉내내는 상태 머신.
-    물리적으로 정밀한 시뮬레이션이 아니라, 벤치 테스트에서 '그럴듯하게 변하는 값'을
-    만드는 게 목적이다 (가속/순항/감속/후진에 맞춰 speed/power/regen이 같이 움직임)."""
+    """실주행 흉내를 버리고, 모든 신호를 각자 다른 주기의 sin파로 항상 동시에 움직이게
+    만드는 상태. 목적은 '그럴듯한 값'이 아니라 '게이지/숫자 애니메이션이 끊김 없이 잘
+    따라오는지'를 최대한 많이 노출시키는 것 — 그래서 값이 멈춰있는 구간이 아예 없다."""
 
-    def __init__(self, start_odo_km: float = 12345.0, start_soc: float = 80.0):
+    def __init__(self, start_odo_km: float = 12345.0):
         self.t = 0.0
         self.odo_km = start_odo_km
-        self.soc = start_soc
-
-    def _phase_at(self, t_in_cycle: float):
-        acc = 0.0
-        for name, dur, mode in CYCLE:
-            if t_in_cycle < acc + dur:
-                return name, mode, (t_in_cycle - acc) / dur  # (이름, 모드, 그 구간 내 진행률 0~1)
-            acc += dur
-        return CYCLE[-1][0], CYCLE[-1][2], 1.0
 
     def step(self, dt: float):
         self.t += dt
-        t_in_cycle = self.t % CYCLE_TOTAL_S
-        phase, mode, progress = self._phase_at(t_in_cycle)
+        t = self.t
 
-        speed = 0.0
-        power = 0.0
-        regen = 0.0
+        # 각 신호: (중심값, 진폭, 주기(s), 위상) — 전부 다르게 잡아서 서로 엇갈리게 움직임.
+        # 2026-08-05(2차): 주기가 1~4s로 너무 짧아서 애니메이션(150ms)이 따라잡기도 전에
+        # 목표값이 또 바뀌어 "부드럽게 스윕"이 아니라 "불연속적으로 튄다"는 피드백 —
+        # 진폭은 그대로 두고 주기만 3~4배 늘려서(값이 전체 범위를 쓸고 지나가는 속도를 늦춤)
+        # 매 애니메이션 구간 동안 목표가 조금씩만 움직이게 함.
+        speed = _osc(t, 95.0, 105.0, 8.0, 0.0)          # -10~200km/h (가끔 후진 구간도 스쳐감)
+        power = _osc(t, 50.0, 50.0, 6.0, 0.8)           # 0~100kW (UI_POWER_GAUGE_MAX_KW과 동일)
+        regen = _osc(t, 25.0, 25.0, 7.0, 1.6)           # 0~50kW (UI_REGEN_BAR_MAX_KW과 동일)
+        soc = _osc(t, 55.0, 45.0, 11.0, 2.4)            # 10~100% (가끔 20% 밑으로 -> SOC 경고색)
+        voltage = _osc(t, 40.0, 40.0, 5.5, 3.2)         # 0~80V (UI_BAR_GAUGE 전압 범위와 동일)
+        temp = _osc(t, 45.0, 55.0, 9.0, 4.0)            # -10~100도 (가끔 60도 넘음 -> Temp 경고색)
+        range_km = _osc(t, 130.0, 120.0, 12.0, 0.4)     # 10~250km, 애니메이션 없는 텍스트지만 같이 흔듦
 
-        if phase == "PARK":
-            speed = 0.0
-        elif phase == "ACCEL":
-            speed = TARGET_CRUISE_KMH * progress
-            power = 60.0 * min(1.0, progress * 1.5)  # 초반에 힘 세게, 뒤로 갈수록 완화
-        elif phase == "CRUISE":
-            speed = TARGET_CRUISE_KMH + 2.0 * math.sin(self.t * 2.0)  # 미세한 흔들림
-            power = 15.0
-        elif phase == "DECEL":
-            speed = TARGET_CRUISE_KMH * (1.0 - progress)
-            regen = 40.0 * math.sin(progress * math.pi)  # 감속 중간에 회생 피크
-        elif phase == "REVERSE":
-            speed = REVERSE_KMH
-            power = 2.0
-
-        # 주행거리 누적 (km/h * s -> km), 후진도 절대값으로 누적
-        self.odo_km += abs(speed) / 3600.0 * dt
-        # SOC: 출력만큼 소모, 회생만큼 일부 회복 (그럴듯한 비율일 뿐 실측 아님)
-        self.soc -= power * dt * 0.0006
-        self.soc += regen * dt * 0.0002
-        self.soc = max(0.0, min(100.0, self.soc))
-
-        voltage = 72.0 - power * 0.05 + regen * 0.02
+        speed = max(-10.0, min(245.0, speed))
+        power = max(0.0, min(255.0, power))
+        regen = max(0.0, min(255.0, regen))
+        soc = max(0.0, min(100.0, soc))
         voltage = max(0.0, min(80.0, voltage))
-        temp = 25.0 + power * 0.15 - (0.0 if power > 0 else 0.5)
         temp = max(-20.0, min(235.0, temp))
-        range_km = self.soc / 100.0 * FULL_RANGE_KM
+        range_km = max(0.0, min(255.0, range_km))
+
+        self.odo_km += abs(speed) / 3600.0 * dt
 
         return {
             "Speed": round(speed),
-            "DriveMode": mode,
+            "DriveMode": DRIVE_MODE,
             "DTC": 0,
-            "Power": round(max(0.0, power)),
-            "RegenPower": round(max(0.0, regen)),
-            "SOC": round(self.soc),
+            "Power": round(power),
+            "RegenPower": round(regen),
+            "SOC": round(soc),
             "DClinkVoltage": round(voltage),
             "Temp": round(temp),
-            "DriveRange": round(min(255.0, range_km)),
+            "DriveRange": round(range_km),
             "Odometer": round(min(327675.0, self.odo_km)),
-        }, phase
+        }
 
 
 def list_channels():
@@ -128,7 +113,7 @@ def main():
         list_channels()
         return
 
-    db = cantools.database.load_file(str(DBC_PATH))
+    db = cantools.database.load_file(str(DBC_PATH)) # dbc 파일 불러오기 -> CAN 메시지, 데이터 맵핑
     msg1 = db.get_message_by_name("InvMsg1")
     msg2 = db.get_message_by_name("InvMsg2")
 
@@ -152,7 +137,7 @@ def main():
                 dt = now - last_tick
             last_tick = now
 
-            values, phase = state.step(dt)
+            values = state.step(dt)
 
             if now >= next_msg1:
                 data1 = msg1.encode({
@@ -173,7 +158,7 @@ def main():
 
             if now - last_print >= 1.0:
                 last_print = now
-                print(f"[{phase:7s}] speed={values['Speed']:4d}km/h mode={values['DriveMode']} "
+                print(f"speed={values['Speed']:4d}km/h mode={values['DriveMode']} "
                       f"power={values['Power']:3d}kW regen={values['RegenPower']:3d}kW "
                       f"soc={values['SOC']:3d}% volt={values['DClinkVoltage']:2d}V "
                       f"temp={values['Temp']:3d}C range={values['DriveRange']:3d}km "
