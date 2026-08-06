@@ -612,6 +612,13 @@ static void tileview_event_cb(lv_event_t *e)
  * 변경 — 탭하면 바로 전환됨. LV_ANIM_OFF도 내부적으로 LV_EVENT_SCROLL_END를 동기적으로
  * 보내므로(lv_obj_scroll_by, lv_obj_scroll.c) dot 갱신 로직은 애니메이션 유무와 무관하게
  * 그대로 작동한다(직접 소스 확인함). */
+/* 2026-08-06: 탭으로 페이지가 통째로 바뀌는 순간엔 화면이 밴드 단위로 나뉘어 바뀌는
+ * 테어링이 실기기에서 보고됨(main/lvgl.c 40/48라인 SRAM 드로우 버퍼가 라이브 프레임버퍼에
+ * 직접 겹쳐쓰는 구조라 생김) — direct_mode 재도전은 과거 실패 이력(docs/design/
+ * toolchain-versions.md)이 있어 보류하고, lv_obj_set_tile_id() 호출 직전에 이 한 번만
+ * 예전 PSRAM zero-copy(원자적 스왑) 경로로 전환해 그 프레임만 테어프리로 그리게 한다. */
+extern void lvgl_request_tearfree_page_switch(void);
+
 static void go_to_page(int delta)
 {
     lv_obj_t *act = lv_tileview_get_tile_act(tileview);
@@ -628,6 +635,7 @@ static void go_to_page(int delta)
     if (target > 3) target = 3;
 
     if (target != cur) {
+        lvgl_request_tearfree_page_switch();
         lv_obj_set_tile_id(tileview, target, 0, LV_ANIM_OFF);
     }
 }

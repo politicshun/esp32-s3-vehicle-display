@@ -25,6 +25,17 @@ static lv_disp_draw_buf_t s_draw_buf;
 static lv_disp_drv_t s_disp_drv;
 static lv_indev_drv_t s_indev_drv;
 
+/* 2026-08-06(3차): 페이지 전환(탭) 시 화면이 밴드 단위로 나뉘어 바뀌는 테어링 리포트 —
+ * direct_mode 재도전은 과거 두 번(2026-08-04) 실패 이력이 있어 보류
+ * (docs/design/toolchain-versions.md, 로직 분석기 실측 필요라 이 세션에서 재시도 불가).
+ * 대신 하이브리드: 평소엔 아래 SRAM 버퍼로 빠르게 그리다가, 페이지가 통째로 바뀌는
+ * "그 한 프레임"만 패널 자신의 PSRAM fbs[]에 직접 그려 cur_fb_index를 원자적으로 스왑하는
+ * 예전 zero-copy 경로로 잠깐 전환해 테어링을 없앤다 — lvgl_request_tearfree_page_switch() */
+static void *s_psram_fb0 = NULL;
+static void *s_psram_fb1 = NULL;
+static lv_color_t *s_sram_draw_buf = NULL;
+static bool s_using_psram_draw_buf = false;
+
 /* DIAGNOSTIC(2026-08-05, 임시): handler_us(lv_timer_handler 전체) 중 실제 픽셀 밀어넣기
  * (esp_lcd_panel_draw_bitmap, "zero-copy 스왑"이라던 그 호출)가 차지하는 비중만 따로 재서,
  * LVGL 소프트웨어 래스터라이즈(그리기 자체) vs 패널 드라이버 플러시 중 뭐가 200ms를
@@ -44,6 +55,18 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     s_flush_call_count++;
     if (dt > s_flush_us_max) s_flush_us_max = dt;
     lv_disp_flush_ready(drv);
+}
+
+/* ui.c의 go_to_page()가 lv_obj_set_tile_id() 호출 직전에 부른다. full_refresh=1이라 그
+ * 다음 lv_timer_handler() 호출이 곧바로 새 페이지 전체를 이 PSRAM 버퍼로 한 번에 그리고
+ * (flush 1콜, cur_fb_index 스왑이라 테어링 없음), lvgl_ui_task()의 루프가 그 직후 자동으로
+ * SRAM 버퍼로 되돌린다(아래 while(1) 참고) — flush_cb가 동기 호출이라 그 시점엔 이미 화면
+ * 반영이 끝나 있어 프레임 카운터 없이 "한 번 쓰고 바로 복귀"가 안전하다. */
+void lvgl_request_tearfree_page_switch(void) {
+    if (s_psram_fb0 && s_psram_fb1 && !s_using_psram_draw_buf) {
+        lv_disp_draw_buf_init(&s_draw_buf, s_psram_fb0, s_psram_fb1, LCD_H_RES * LCD_V_RES);
+        s_using_psram_draw_buf = true;
+    }
 }
 
 /* ---- GT911 터치 좌표를 LVGL 인풋 이벤트로 변환 ---- */
@@ -169,6 +192,12 @@ void lvgl_ui_task(void *pvParameters) {
         return;
     }
 
+    // 페이지 전환 테어프리 스왑용 — 패널이 이미 갖고 있는 num_fbs=2 PSRAM 프레임버퍼
+    // 포인터만 얻어둔다(평소엔 안 씀, lvgl_request_tearfree_page_switch() 호출 시에만 사용).
+    if (esp_lcd_rgb_panel_get_frame_buffer(s_panel_handle, 2, &s_psram_fb0, &s_psram_fb1) != ESP_OK) {
+        ESP_LOGW(TAG, "PSRAM 프레임버퍼 획득 실패 — 페이지 전환 테어프리 스왑 비활성화");
+    }
+
     bool touch_ok = (touch_init() == ESP_OK);
     if (!touch_ok) {
         ESP_LOGW(TAG, "터치 없이 화면만 표시합니다 (터치 재확인 필요)");
@@ -201,7 +230,7 @@ void lvgl_ui_task(void *pvParameters) {
     // 비용보다 훨씬 크다는 게 위 실측+공식 가이드로 확인됐다. flush_cb 자체는 코드
     // 변경 없음(color_map이 패널 자신의 fb든 별도 SRAM 버퍼든 esp_lcd_panel_draw_bitmap이
     // 알아서 처리).
-#define LVGL_DRAW_BUF_LINES 40  /* 800*40px = 화면 높이의 8.3% */
+#define LVGL_DRAW_BUF_LINES 48  /* 800*48px = 화면 높이의 10% */
     size_t draw_buf_bytes = LCD_H_RES * LVGL_DRAW_BUF_LINES * sizeof(lv_color_t);
     /* MALLOC_CAP_DMA는 안 씀 — 이 버퍼는 CPU(LVGL 소프트웨어 렌더러)가 채워넣는 용도지
      * 하드웨어 DMA가 직접 읽는 게 아니다(esp_lcd_panel_draw_bitmap()의 일반 복사 경로가
@@ -209,8 +238,21 @@ void lvgl_ui_task(void *pvParameters) {
      * 부팅 초반에 먼저 가져가서 풀이 훨씬 좁아 96000바이트(60라인) 할당이 실패했었다
      * (2026-08-06 실기기 재현: "LVGL 드로우 버퍼 할당 실패" 로그, 진단 로그로 확인한
      * largest_free_block=83968 bytes — DMA 플래그 유무와 무관하게 파편화로 60라인은
-     * 항상 실패). 12.5%(60라인) 권장값 대신 largest_free_block에 여유 있게 들어가는
-     * 40라인(64000 bytes)으로 낮춰서 해결. */
+     * 항상 실패). 40라인(64000 bytes)으로 우선 낮춰서 해결했었다.
+     *
+     * 2026-08-06(2차): 40라인짜리 버퍼는 이 SRAM 버퍼가 패널 자신의 PSRAM fbs[] 밖에
+     * 있어서 esp_lcd_panel_draw_bitmap()이 "일반 복사" 경로(esp_lcd_panel_rgb.c
+     * rgb_panel_draw_bitmap의 draw_buf_copy_to_fb=true 분기)를 타는데, 이 경로는
+     * 지금 실제로 스캔아웃 중인 라이브 프레임버퍼(fbs[cur_fb_index])에 밴드 단위로
+     * 곧바로 덮어쓴다 — 완성된 프레임을 통째로 그린 뒤 원자적으로 스왑하는 예전
+     * zero-copy 경로(draw_buffer가 fbs[i] 안에 있을 때만 타는 cur_fb_index 스왑 분기)를
+     * 안 타기 때문. full_refresh=1이라 매 프레임 전체 화면을 40라인×12밴드로 나눠 순차
+     * 기록하는데, 이게 스캔 도중 실시간으로 겹쳐써서 페이지 전환처럼 화면 전체가 한번에
+     * 바뀔 때 "나뉘어서 바뀌는" 테어링으로 보인다는 사용자 리포트(실기기 확인). 근본
+     * 해결(스왑 기반 무테어링)은 아니지만, largest_free_block 안에서 최대한 버퍼를
+     * 키우면 밴드 수가 줄어(12->10) 한 번의 전체 화면 갱신이 더 빨리 끝나 테어링이
+     * 노출되는 시간이 짧아진다 — 48라인(76800 bytes, largest_free_block=83968 대비
+     * 여유 7168 bytes)으로 시험, 양산 가능한 수준인지 실기기로 확인 중. */
     ESP_LOGI(TAG, "내부 SRAM 상태: free=%u, largest_block=%u (요청 %u bytes)",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
@@ -221,6 +263,7 @@ void lvgl_ui_task(void *pvParameters) {
         vTaskDelete(NULL);
         return;
     }
+    s_sram_draw_buf = draw_buf1;
     lv_disp_draw_buf_init(&s_draw_buf, draw_buf1, NULL, LCD_H_RES * LVGL_DRAW_BUF_LINES);
 
     lv_disp_drv_init(&s_disp_drv);
@@ -271,6 +314,15 @@ void lvgl_ui_task(void *pvParameters) {
         int64_t handler_start_us = esp_timer_get_time();
         lv_timer_handler();
         int64_t handler_end_us = esp_timer_get_time();
+
+        // 페이지 전환 테어프리 스왑(lvgl_request_tearfree_page_switch()) 직후의 그 한
+        // 프레임만 위 lv_timer_handler()가 PSRAM 버퍼로 그렸다 — flush_cb가 동기 호출이라
+        // 여기 도달한 시점엔 이미 화면 반영이 끝나 있으므로, 다음 프레임부터는 곧바로
+        // 빠른 SRAM 버퍼로 되돌린다.
+        if (s_using_psram_draw_buf) {
+            lv_disp_draw_buf_init(&s_draw_buf, s_sram_draw_buf, NULL, LCD_H_RES * LVGL_DRAW_BUF_LINES);
+            s_using_psram_draw_buf = false;
+        }
 
         int64_t handler_us = handler_end_us - handler_start_us;
         int64_t loop_us = handler_end_us - last_loop_us;
