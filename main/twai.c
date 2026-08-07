@@ -24,7 +24,30 @@ static bool twai_start_with_retry(void) {
         TWAI_GENERAL_CONFIG_DEFAULT(CAN_TX_GPIO_NUM, CAN_RX_GPIO_NUM, TWAI_MODE_NORMAL);
     // TODO: 실제 버스 속도 확인 필요 (500kbps 가정 중 - 250k/1M인 차량도 흔함)
     twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
-    twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
+    // 2026-08-07: ACCEPT_ALL -> 하드웨어 어셉턴스 필터(dual filter mode).
+    // 이전에는 버스의 모든 프레임이 인터럽트/RX큐/태스크까지 올라온 뒤 switch의 default에서
+    // 소프트웨어로 버려졌다. 벤치(Kvaser 2개 ID)에서는 티가 안 나지만 실차 버스에 붙이면
+    // 관심 없는 프레임 때문에 RX큐(기본 5개)와 CPU를 그대로 낭비한다.
+    //
+    // ESP32-S3의 TWAI는 SJA1000 계열 어셉턴스 필터다. dual filter mode + 표준 프레임에서
+    // 32bit acceptance code/mask의 비트 배치는:
+    //   [31:21]=필터1 ID(11bit)  [20]=필터1 RTR  [19:16]=필터1 data[0] 상위 니블
+    //   [15:5] =필터2 ID(11bit)  [4] =필터2 RTR  [3:0] =필터2 data[0] 하위 니블
+    // mask는 1 = don't care.
+    //
+    //   code = (0x100 << 21) | (0x200 << 5) = 0x20000000 | 0x00004000 = 0x20004000
+    //   mask = (0xF << 16) | 0xF            = 0x000F000F   (data 니블만 무시, ID/RTR은 정확 일치)
+    //
+    // 결과: 표준 데이터 프레임 0x100과 0x200 **정확히 두 개만** 통과. RTR도 하드웨어에서 차단.
+    // 수신 대상 ID를 추가/변경하면 위 계산을 다시 하고 이 주석도 같이 갱신할 것
+    // (ID가 3개 이상 필요해지면 dual filter로는 정확 매칭이 불가능하므로,
+    //  마스크를 넓혀 통과시키고 switch의 default에서 거르는 절충이 필요하다).
+    twai_filter_config_t f_config = {
+        .acceptance_code = ((uint32_t)CAN_ID_INV_MSG1 << 21) | ((uint32_t)CAN_ID_INV_MSG2 << 5),
+        .acceptance_mask = (0xFU << 16) | 0xFU,
+        .single_filter = false,
+    };
 
     esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
     if (err != ESP_OK) {
@@ -46,6 +69,13 @@ static bool twai_start_with_retry(void) {
 }
 
 static void handle_rx_message(const twai_message_t *rx_msg) {
+    // cluster.dbc의 InvMsg1/InvMsg2는 표준(11bit) 데이터 프레임이다. 확장 ID 0x100이나
+    // RTR 프레임을 표준 0x100으로 오인해서 언패킹하면 안 된다.
+    // (하드웨어 필터가 이미 대부분 막지만, 필터 설정이 바뀌었을 때를 대비한 이중 방어)
+    if (rx_msg->extd || rx_msg->rtr) {
+        return;
+    }
+
     // HARNESS-TODO: KVASER 벤치 테스트용 임시 raw 로그. 실차 연결 전 삭제할 것.
     ESP_LOGI(TAG, "RX id=0x%03lX dlc=%d data=%02X %02X %02X %02X %02X %02X %02X %02X",
              rx_msg->identifier, rx_msg->data_length_code,
