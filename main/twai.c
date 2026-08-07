@@ -235,12 +235,14 @@ void twai_rx_task(void *pvParameters) {
 // twai_transmit()은 프레임을 TX 버퍼/큐에 넣은 시점에 ESP_OK를 반환하고, 버스에서 ACK를
 // 받았는지는 기다리지 않는다. 즉 버스에 아무도 없어도(=아무 데도 도달 못 해도) ESP_OK다.
 // 실차에서 인버터가 사라졌을 때 클러스터가 그걸 눈치채려면 TEC/tx_failed_count를 봐야 한다.
-static bool tx_link_healthy(uint32_t *last_tx_failed) {
+static bool tx_link_healthy(uint32_t *last_tx_failed, uint32_t *msgs_pending) {
     twai_status_info_t st;
     if (twai_get_status_info(&st) != ESP_OK) {
+        *msgs_pending = 0;
         return false;
     }
 
+    *msgs_pending = st.msgs_to_tx;
     bool failed_grew = (st.tx_failed_count != *last_tx_failed);
     *last_tx_failed = st.tx_failed_count;
 
@@ -316,16 +318,31 @@ void twai_tx_task(void *pvParameters) {
         if (xSemaphoreTake(s_twai_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
             if (s_twai_running) {
                 // 직전 주기 송신의 결말을 먼저 확인한다(500ms면 완료/실패가 확정돼 있다).
-                tx_healthy = tx_link_healthy(&last_tx_failed);
+                uint32_t msgs_pending = 0;
+                tx_healthy = tx_link_healthy(&last_tx_failed, &msgs_pending);
 
-                esp_err_t err = twai_transmit(&tx_msg, pdMS_TO_TICKS(50));
-                if (err == ESP_OK) {
-                    alive_counter++;
+                if (msgs_pending > 0) {
+                    // 직전 Alive가 아직 버스에 못 나갔다(ACK 없음 등). 여기서 하나 더 쌓으면
+                    // 나중에 버스가 살아났을 때 몇 초 전에 만든 payload가 줄줄이 방출된다 —
+                    // 2026-08-07 실기기 실측: 리스너를 늦게 붙이자 uptime 0~3초짜리 프레임
+                    // 6개가 한꺼번에 나온 뒤에야 현재값(89초)이 나왔다.
+                    // Alive는 "지금 살아있다"를 알리는 메시지라 늦게 배달된 옛 프레임은
+                    // 무의미한 정도가 아니라 해롭다(수신측이 방금 부팅했다고 오판한다).
+                    // 그래서 쌓지 않고 이번 주기를 건너뛴다 — 다음 주기에 최신값으로 다시 만든다.
+                    // (재전송 자체를 끄는 single-shot은 쓰지 않는다. 버스가 붐빌 때 정상적으로
+                    //  발생하는 중재 실패까지 버려서 Alive 도달률이 떨어지기 때문이다.)
+                    ESP_LOGD(TAG, "ClusterAlive 이번 주기 건너뜀 (미전송 %lu건 대기 중)",
+                             (unsigned long)msgs_pending);
                 } else {
-                    // 여기 걸리는 건 큐 적재 자체가 실패한 경우(버스오프 등)뿐이다.
-                    // ACK 실패는 여기서 안 잡힌다 — tx_link_healthy()가 담당.
-                    ESP_LOGW(TAG, "ClusterAlive 큐 적재 실패: %s", esp_err_to_name(err));
-                    tx_healthy = false;
+                    esp_err_t err = twai_transmit(&tx_msg, pdMS_TO_TICKS(50));
+                    if (err == ESP_OK) {
+                        alive_counter++;
+                    } else {
+                        // 여기 걸리는 건 큐 적재 자체가 실패한 경우(버스오프 등)뿐이다.
+                        // ACK 실패는 여기서 안 잡힌다 — tx_link_healthy()가 담당.
+                        ESP_LOGW(TAG, "ClusterAlive 큐 적재 실패: %s", esp_err_to_name(err));
+                        tx_healthy = false;
+                    }
                 }
             }
             xSemaphoreGive(s_twai_lock);
