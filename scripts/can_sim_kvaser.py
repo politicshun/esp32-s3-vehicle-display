@@ -34,6 +34,23 @@ TICK_S = 0.02          # 갱신 주기는 20ms로 설정했음. (LVGL 갱신과 
 
 DRIVE_MODE = 3  # 항상 D — 기어 배지는 애니메이션이 없어서(즉시 전환) 반응성 테스트와 무관, 흔들면 오히려 헷갈림
 
+# 2026-08-07: 수신 어셉턴스 필터(main/twai.c) 검증용 미끼 ID.
+# 0x100/0x200이 화면에 반영되는 것만으로는 "필터가 과하게 막지 않는다"밖에 증명이 안 된다.
+# 마스크를 잘못 계산해서 사실상 ACCEPT_ALL이 돼 있어도 증상이 똑같기 때문이다.
+# 그래서 "막혀야 하는" ID를 같이 쏴보고, 보드 로그에 RX가 안 찍히는 걸로 차단을 직접 확인한다.
+#
+# 고른 기준: 전부 0x100 또는 0x200에서 **딱 1비트만** 다른 값들이다. 마스크가 조금이라도
+# 헐거우면 제일 먼저 새는 값들이라 가장 빡센 테스트가 된다. 0x000(모든 비트 0)과
+# 0x7FF(모든 비트 1)는 양 극단 확인용.
+# 0x300(ClusterAlive)은 일부러 뺐다 — 보드가 같은 ID로 송신 중이라 같이 쏘면 실제 버스
+# 충돌/에러 프레임이 생겨서 "필터 때문에 안 들어왔다"와 구분이 안 된다.
+DECOY_IDS = [
+    0x000, 0x7FF,
+    0x101, 0x102, 0x104, 0x108, 0x110, 0x120, 0x140, 0x180,  # 0x100에서 1비트씩
+    0x201, 0x202, 0x204, 0x208, 0x210, 0x220, 0x240, 0x280,  # 0x200에서 1비트씩
+]
+DECOY_PERIOD_S = 0.100
+
 
 def _osc(t: float, center: float, amplitude: float, period_s: float, phase_rad: float) -> float:
     """center를 기준으로 +-amplitude만큼 sin파로 진동하는 값. 신호마다 period_s/phase_rad를
@@ -107,6 +124,9 @@ def main():
     ap.add_argument("--channel", type=int, default=0, help="KVASER 채널 번호 (--list-channels로 확인)")
     ap.add_argument("--bitrate", type=int, default=500000, help="CAN 버스 속도 (기본 500kbps)")
     ap.add_argument("--list-channels", action="store_true", help="사용 가능한 KVASER 채널만 출력하고 종료")
+    ap.add_argument("--decoy", action="store_true",
+                    help="수신 필터 검증용: 차단돼야 하는 미끼 ID들도 같이 송신한다 "
+                         "(보드 로그에 해당 RX가 안 찍혀야 정상)")
     args = ap.parse_args()
 
     if args.list_channels:
@@ -122,8 +142,16 @@ def main():
           f"InvMsg1={hex(msg1.frame_id)}({MSG1_PERIOD_S*1000:.0f}ms) "
           f"InvMsg2={hex(msg2.frame_id)}({MSG2_PERIOD_S*1000:.0f}ms) 송신 시작. Ctrl+C로 종료.")
 
+    if args.decoy:
+        print(f"[decoy] 필터 검증 모드: {len(DECOY_IDS)}개 미끼 ID를 "
+              f"{DECOY_PERIOD_S*1000:.0f}ms마다 같이 송신합니다 -> "
+              + " ".join(f"0x{i:03X}" for i in DECOY_IDS))
+        print("[decoy] 보드 시리얼 로그에 위 ID의 RX가 하나도 안 찍혀야 필터 정상.")
+
     state = DriveState()
     next_msg1 = next_msg2 = time.monotonic()
+    next_decoy = time.monotonic()
+    decoy_sent = 0
     last_tick = time.monotonic()
     last_print = 0.0
 
@@ -156,13 +184,22 @@ def main():
                 bus.send(can.Message(arbitration_id=msg2.frame_id, data=data2, is_extended_id=False))
                 next_msg2 += MSG2_PERIOD_S
 
+            if args.decoy and now >= next_decoy:
+                # 페이로드는 ID를 알아보기 쉽게 채운다(보드 로그에 찍히면 어느 미끼인지 바로 보이게).
+                for did in DECOY_IDS:
+                    payload = bytes([did & 0xFF, (did >> 8) & 0xFF, 0xDE, 0xC0, 0xDE, 0, 0, 0])
+                    bus.send(can.Message(arbitration_id=did, data=payload, is_extended_id=False))
+                    decoy_sent += 1
+                next_decoy += DECOY_PERIOD_S
+
             if now - last_print >= 1.0:
                 last_print = now
                 print(f"speed={values['Speed']:4d}km/h mode={values['DriveMode']} "
                       f"power={values['Power']:3d}kW regen={values['RegenPower']:3d}kW "
                       f"soc={values['SOC']:3d}% volt={values['DClinkVoltage']:2d}V "
                       f"temp={values['Temp']:3d}C range={values['DriveRange']:3d}km "
-                      f"odo={values['Odometer']}km")
+                      f"odo={values['Odometer']}km"
+                      + (f" | decoy_sent={decoy_sent}" if args.decoy else ""))
     except KeyboardInterrupt:
         print("\n종료합니다.")
     finally:
