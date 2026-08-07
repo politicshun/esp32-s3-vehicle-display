@@ -219,15 +219,44 @@ void twai_rx_task(void *pvParameters) {
 // 때문이다. 따라서 "응답 노드 없음"의 최종 상태는 bus-off가 아니라 error passive이고,
 // twai_rx_task의 버스오프 감지로는 이 상황을 못 잡는다 — tx_link_healthy()가 TEC를
 // 직접 봐야 하는 이유다. (관측값: state=RUNNING TEC=128 tx_failed=0, bus_err만 계속 증가)
+// 직전 주기의 송신이 "버스에 실제로 나갔는지"를 컨트롤러 상태로 판정한다.
+//
+// twai_transmit()의 반환값으로는 이걸 알 수 없다 — ESP-IDF 드라이버 소스를 확인한 결과
+// twai_transmit()은 프레임을 TX 버퍼/큐에 넣은 시점에 ESP_OK를 반환하고, 버스에서 ACK를
+// 받았는지는 기다리지 않는다. 즉 버스에 아무도 없어도(=아무 데도 도달 못 해도) ESP_OK다.
+// 실차에서 인버터가 사라졌을 때 클러스터가 그걸 눈치채려면 TEC/tx_failed_count를 봐야 한다.
+static bool tx_link_healthy(uint32_t *last_tx_failed) {
+    twai_status_info_t st;
+    if (twai_get_status_info(&st) != ESP_OK) {
+        return false;
+    }
+
+    bool failed_grew = (st.tx_failed_count != *last_tx_failed);
+    *last_tx_failed = st.tx_failed_count;
+
+    // TEC >= 128 = error passive. ACK를 못 받으면 재전송마다 TEC가 올라가므로 버스에
+    // 우리만 남으면 금방 여기 걸린다 — 2026-08-07 실측으로 부팅 약 1초 만에 128 도달.
+    // 128을 임계값으로 쓰는 이유: ACK 실패는 error passive에서 TEC 증가가 멈춰 bus-off로
+    // 넘어가지 않으므로(위 twai_tx_task 주석 참고), state만 봐서는 영영 RUNNING이다.
+    // 복구 시엔 성공 송신마다 TEC가 1씩 내려가며 128 밑으로 떨어지면 정상 판정된다
+    // (실측 복구 소요 약 1~2초, TEC 122에서 전환 확인).
+    return (st.state == TWAI_STATE_RUNNING) && !failed_grew && (st.tx_error_counter < 128);
+}
+
 void twai_tx_task(void *pvParameters) {
     TickType_t last_wake = xTaskGetTickCount();
     uint8_t alive_counter = 0;
+    uint32_t last_tx_failed = 0;
+    bool tx_healthy = true;
+    bool tx_healthy_prev = true;
 
     while (1) {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(CLUSTER_ALIVE_PERIOD_MS));
 
         if (!s_twai_running) {
-            continue;  // 드라이버 설치 전이거나 버스오프 복구 중
+            // 드라이버 설치 전이거나 버스오프 복구 중 — 송신이 되고 있을 리 없다.
+            vehicle_data_set_link_status(true, false);
+            continue;
         }
 
         VehicleData_t data;
@@ -268,14 +297,39 @@ void twai_tx_task(void *pvParameters) {
 
         if (xSemaphoreTake(s_twai_lock, pdMS_TO_TICKS(100)) == pdTRUE) {
             if (s_twai_running) {
+                // 직전 주기 송신의 결말을 먼저 확인한다(500ms면 완료/실패가 확정돼 있다).
+                tx_healthy = tx_link_healthy(&last_tx_failed);
+
                 esp_err_t err = twai_transmit(&tx_msg, pdMS_TO_TICKS(50));
                 if (err == ESP_OK) {
                     alive_counter++;
                 } else {
-                    ESP_LOGW(TAG, "ClusterAlive 송신 실패: %s", esp_err_to_name(err));
+                    // 여기 걸리는 건 큐 적재 자체가 실패한 경우(버스오프 등)뿐이다.
+                    // ACK 실패는 여기서 안 잡힌다 — tx_link_healthy()가 담당.
+                    ESP_LOGW(TAG, "ClusterAlive 큐 적재 실패: %s", esp_err_to_name(err));
+                    tx_healthy = false;
                 }
             }
             xSemaphoreGive(s_twai_lock);
         }
+
+        // 상태가 바뀔 때만 로그 — 500ms마다 찍으면 다른 로그를 덮는다.
+        if (tx_healthy != tx_healthy_prev) {
+            twai_status_info_t st;
+            if (twai_get_status_info(&st) == ESP_OK) {
+                ESP_LOGW(TAG, "CAN TX %s (state=%d TEC=%lu tx_failed=%lu arb_lost=%lu bus_err=%lu)",
+                         tx_healthy ? "정상 복구" : "이상 — 버스에 응답 노드가 없을 수 있음",
+                         (int)st.state, (unsigned long)st.tx_error_counter,
+                         (unsigned long)st.tx_failed_count, (unsigned long)st.arb_lost_count,
+                         (unsigned long)st.bus_error_count);
+            }
+            tx_healthy_prev = tx_healthy;
+        }
+
+        // UI가 "멈춘 값"을 최신값으로 오해하지 않도록 링크 상태를 공유 데이터에 반영.
+        // 수신 신호 중 하나라도 끊기면 stale로 본다 (InvMsg1이 살아있어도 InvMsg2가
+        // 죽었으면 SOC/전압/온도는 이미 옛날 값이다).
+        bool rx_stale = !(status & ALIVE_ST_INVMSG1_OK) || !(status & ALIVE_ST_INVMSG2_OK);
+        vehicle_data_set_link_status(rx_stale, tx_healthy);
     }
 }

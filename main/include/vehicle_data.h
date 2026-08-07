@@ -25,8 +25,23 @@ typedef struct {
     float    power_kw;      // 실시간 출력 (kW, 정수 해상도). InvMsg1 byte3
     float    regen_kw;      // 회생제동 출력 (kW, 정수 해상도). InvMsg1 byte4
     int16_t  sys_temp_c;    // 시스템 온도 (degC). InvMsg2 byte2, raw-20, [-20|235] — int8_t 범위(127) 초과라 int16_t 사용
+
+    // 2026-08-07: CAN 링크 상태. 위 필드들과 달리 "수신한 값"이 아니라 "수신이 되고 있는지"다.
+    // CAN이 끊기면 위 신호들은 마지막 값 그대로 멈춰 있으므로, UI가 그걸 최신값으로
+    // 오해하지 않게 하려면 이 두 필드가 필요하다. main/twai.c의 twai_tx_task가 500ms마다 갱신.
+    bool     can_rx_stale;    // InvMsg1/InvMsg2 중 하나라도 주기 대비 타임아웃 (표시 중인 값이 옛날 값)
+    bool     can_tx_healthy;  // ClusterAlive가 실제로 버스에 나가고 있는지 (TEC/tx_failed 기준)
 } VehicleData_t;
 
 void vehicle_data_init(void);
 void vehicle_data_set(const VehicleData_t *src);
 void vehicle_data_get(VehicleData_t *dst);
+
+// 링크 상태 두 필드만 원자적으로 갱신한다.
+// vehicle_data_get() -> 수정 -> vehicle_data_set() 패턴을 쓰지 않는 이유: 그 패턴은
+// get과 set 사이가 원자적이지 않다. 지금까지는 writer가 twai_rx_task 하나뿐이라 문제가
+// 없었지만, twai_tx_task가 두 번째 writer로 들어오면서 두 태스크의 read-modify-write가
+// 겹치면 서로의 갱신을 덮어쓴다 (예: TX가 읽은 직후 RX가 speed를 갱신 -> TX가 set하면서
+// 그 speed가 옛날 값으로 되돌아감). 필드 단위 setter는 뮤텍스 안에서 해당 필드만 건드려
+// 이 문제를 원천 차단한다.
+void vehicle_data_set_link_status(bool rx_stale, bool tx_healthy);

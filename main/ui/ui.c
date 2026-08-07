@@ -108,6 +108,7 @@ static lv_obj_t *lbl_sys_temp;    /* sys_temp_c 바인딩 (placeholder, CAN 0x30
 static lv_obj_t *dot_ble;
 static lv_obj_t *lbl_ble_status;
 static lv_obj_t *dot_vehicle;
+static lv_obj_t *lbl_vehicle;     /* 2026-08-07: CAN 링크 상태 문구를 갱신해야 해서 static으로 승격 */
 
 /* ---------------------------------------------------------------------
  * 공통 헬퍼
@@ -517,7 +518,7 @@ static void build_page_connect(lv_obj_t *tv)
     dot_vehicle = make_status_dot(page);
     lv_obj_align_to(dot_vehicle, dot_ble, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 40);
 
-    lv_obj_t *lbl_vehicle = lv_label_create(page);
+    lbl_vehicle = lv_label_create(page);
     lv_obj_add_style(lbl_vehicle, &ui_style_label_mid, 0);
     lv_label_set_text(lbl_vehicle, "Vehicle Status: OK");
     lv_obj_align_to(lbl_vehicle, dot_vehicle, LV_ALIGN_OUT_RIGHT_MID, 16, 0);
@@ -938,5 +939,33 @@ void ui_update(void)
     lv_obj_set_style_bg_color(dot_ble, d.ble_connected ? UI_COLOR_GREEN : UI_COLOR_TEXT_SEC, 0);
     lv_label_set_text(lbl_ble_status, d.ble_connected ? "BLE Connected" : "BLE Disconnected");
 
-    lv_obj_set_style_bg_color(dot_vehicle, d.dtc_code == 0 ? UI_COLOR_GREEN : UI_COLOR_RED, 0);
+    /* 2026-08-07: CAN 링크 상태를 DTC보다 우선해서 표시한다.
+     * 링크가 끊기면 화면의 모든 값(dtc_code 포함)이 마지막 수신값에서 멈춰 있으므로,
+     * "DTC: OK"조차 신뢰할 수 없다 — 그 상태에서 초록불을 띄우면 오히려 위험하다.
+     * 판정은 main/twai.c의 twai_tx_task가 500ms마다 갱신한다(수신 주기의 3배 타임아웃). */
+    const char *vehicle_status;
+    lv_color_t vehicle_color;
+    if (d.can_rx_stale) {
+        vehicle_status = "Vehicle Status: CAN Link Lost";
+        vehicle_color = UI_COLOR_RED;
+    } else if (!d.can_tx_healthy) {
+        /* 수신은 되는데 송신만 안 나가는 경우 — 트랜시버 TX 경로나 버스 응답 문제.
+         * 표시값 자체는 최신이므로 링크 끊김과 구분해서 보여준다. */
+        vehicle_status = "Vehicle Status: CAN TX Fault";
+        vehicle_color = UI_COLOR_RED;
+    } else if (d.dtc_code != 0) {
+        vehicle_status = "Vehicle Status: DTC Active";
+        vehicle_color = UI_COLOR_RED;
+    } else {
+        vehicle_status = "Vehicle Status: OK";
+        vehicle_color = UI_COLOR_GREEN;
+    }
+    lv_obj_set_style_bg_color(dot_vehicle, vehicle_color, 0);
+    lv_label_set_text(lbl_vehicle, vehicle_status);
+    /* 문구 길이가 바뀌면 라벨 폭도 바뀌므로 재정렬 (lbl_speed와 같은 이유) */
+    lv_obj_align_to(lbl_vehicle, dot_vehicle, LV_ALIGN_OUT_RIGHT_MID, 16, 0);
+
+    /* Page 1 — 링크가 끊긴 동안에는 속도 숫자를 흐리게 해서 "지금 값이 아니다"를 알린다.
+     * 페이지 4를 안 보고 있는 운전자에게도 보이는 유일한 단서다. */
+    lv_obj_set_style_text_opa(lbl_speed, d.can_rx_stale ? LV_OPA_40 : LV_OPA_COVER, 0);
 }

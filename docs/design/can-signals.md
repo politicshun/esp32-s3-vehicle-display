@@ -63,7 +63,15 @@
 `ClusterUptime`은 65535초(약 18.2시간)에서 **saturate**한다 — 롤오버시키면 수신측이
 클러스터 재부팅과 구분할 수 없기 때문이다.
 
-`AliveCounter`는 `twai_transmit()`이 `ESP_OK`를 반환했을 때 증가한다.
+`AliveCounter`는 `twai_transmit()`이 `ESP_OK`를 반환했을 때 증가한다. **주의: 이건 "버스에서
+ACK를 받았다"가 아니라 "TX 버퍼/큐에 적재됐다"는 뜻이다** — ESP-IDF 드라이버는 프레임을
+넘긴 시점에 `ESP_OK`를 반환하고 ACK를 기다리지 않는다(2026-08-07 드라이버 소스 확인).
+따라서 카운터 증가만으로는 송신 성공을 판정할 수 없다.
+
+실제 송신 성공 여부는 `twai_get_status_info()`의 `tx_error_counter`(TEC)와 `tx_failed_count`로
+판정하며(`main/twai.c`의 `tx_link_healthy()`), 결과는 `VehicleData_t.can_tx_healthy`로
+UI(페이지 4 Vehicle Status)에 반영된다. 이 판정 결과는 ClusterAlive 페이로드에는 넣지
+않았다 — 송신이 실패하는 상황이면 그 프레임 자체가 인버터에 도달하지 못하므로 무의미하다.
 
 ## 수신 필터 (2026-08-07)
 

@@ -24,3 +24,11 @@ void vehicle_data_get(VehicleData_t *dst) {
         xSemaphoreGive(xVehicleMutex);
     }
 }
+
+void vehicle_data_set_link_status(bool rx_stale, bool tx_healthy) {
+    if (xVehicleMutex != NULL && xSemaphoreTake(xVehicleMutex, portMAX_DELAY) == pdTRUE) {
+        g_vehicle_data.can_rx_stale = rx_stale;
+        g_vehicle_data.can_tx_healthy = tx_healthy;
+        xSemaphoreGive(xVehicleMutex);
+    }
+}
