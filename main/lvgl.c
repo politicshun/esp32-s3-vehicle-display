@@ -315,6 +315,12 @@ void lvgl_ui_task(void *pvParameters) {
         lv_timer_handler();
         int64_t handler_end_us = esp_timer_get_time();
 
+        // UI 생존 하트비트. lv_timer_handler()가 반환한 "뒤"에 찍는 게 중요하다 —
+        // 루프 진입 시점에 찍으면 "태스크가 깨어났다"만 보증하지만, 여기서 찍으면
+        // "한 프레임을 실제로 끝까지 처리했다"를 보증한다. 렌더링 도중 멈추는 경우가
+        // 감지 대상이므로 후자여야 의미가 있다. (main/twai.c가 500ms마다 신선도 확인)
+        ui_heartbeat_mark();
+
         // 페이지 전환 테어프리 스왑(lvgl_request_tearfree_page_switch()) 직후의 그 한
         // 프레임만 위 lv_timer_handler()가 PSRAM 버퍼로 그렸다 — flush_cb가 동기 호출이라
         // 여기 도달한 시점엔 이미 화면 반영이 끝나 있으므로, 다음 프레임부터는 곧바로

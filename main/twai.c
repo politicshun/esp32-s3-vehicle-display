@@ -31,6 +31,16 @@ static const char *TAG = "TWAI_TASK";
 #define ALIVE_ST_INVMSG2_OK (1 << 1)  // InvMsg2를 타임아웃 내에 받고 있음
 #define ALIVE_ST_BLE_CONN   (1 << 2)  // BLE 앱이 연결돼 있음
 #define ALIVE_ST_DTC_ACTIVE (1 << 3)  // dtc_code != 0
+#define ALIVE_ST_UI_OK      (1 << 4)  // UI 렌더 태스크가 살아서 프레임을 그리고 있음
+
+// UI 하트비트 임계값. 렌더 루프 실측이 평균 60ms, 부팅 직후 최대 249ms이므로
+// 정상 동작 중에 오탐이 나지 않도록 1초로 잡았다. 화면이 멈추면 1~1.5초 안에 감지된다.
+// (실측 근거: docs/design/2026-08-07-scheduling-overview.html의 frame timing 표)
+//
+// 이 비트가 필요한 이유: UI만 멈추면 CAN은 멀쩡하므로 Alive가 계속 정상으로 나간다.
+// 인버터 입장에서 클러스터는 완전히 건강해 보이는데 운전자는 얼어붙은 화면을 본다.
+// can_rx_stale로 화면을 흐리게 하는 처리도 UI가 살아있어야 그려지므로 이 상황엔 무용.
+#define UI_HEARTBEAT_TIMEOUT_MS 1000
 
 // 수신 끊김 판정 임계값 = GenMsgCycleTime의 약 3배(cluster.dbc: InvMsg1=100ms, InvMsg2=200ms).
 // 여기서 처음으로 DBC의 주기값을 코드가 실제로 사용한다 (이전까지는 HARNESS-TODO였음).
@@ -250,6 +260,8 @@ void twai_tx_task(void *pvParameters) {
     bool tx_healthy = true;
     bool tx_healthy_prev = true;
 
+    bool ui_ok_prev = true;
+
     while (1) {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(CLUSTER_ALIVE_PERIOD_MS));
 
@@ -275,6 +287,12 @@ void twai_tx_task(void *pvParameters) {
         }
         if (data.dtc_code != 0) {
             status |= ALIVE_ST_DTC_ACTIVE;
+        }
+        // 하트비트가 0이면 부팅 후 아직 한 프레임도 못 그린 상태 — 이것도 UI 비정상으로 본다.
+        uint32_t ui_hb = ui_heartbeat_last_ms();
+        bool ui_ok = (ui_hb != 0) && ((t - ui_hb) < UI_HEARTBEAT_TIMEOUT_MS);
+        if (ui_ok) {
+            status |= ALIVE_ST_UI_OK;
         }
 
         // 부팅 후 경과 초. 65535초(약 18.2시간)에서 saturate — 롤오버시키면 수신측이
@@ -311,6 +329,15 @@ void twai_tx_task(void *pvParameters) {
                 }
             }
             xSemaphoreGive(s_twai_lock);
+        }
+
+        // UI 하트비트도 상태가 바뀔 때만 로그. UI가 멈춘 상황에서는 화면에 아무것도
+        // 띄울 수 없으므로 이 로그와 ClusterAlive bit4가 유일한 통보 수단이다.
+        if (ui_ok != ui_ok_prev) {
+            ESP_LOGW(TAG, "UI 렌더 태스크 %s (마지막 프레임 %lums 전)",
+                     ui_ok ? "정상 복구" : "응답 없음 — 화면이 멈춰 있을 수 있음",
+                     (unsigned long)(ui_hb == 0 ? 0 : t - ui_hb));
+            ui_ok_prev = ui_ok;
         }
 
         // 상태가 바뀔 때만 로그 — 500ms마다 찍으면 다른 로그를 덮는다.

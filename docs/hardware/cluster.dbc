@@ -63,7 +63,7 @@ EV_ EnvKlemme15: 0 [0|1] "" 0 2 DUMMY_NODE_VECTOR0 Vector__XXX;
 
 CM_ BO_ 768 "CLUSTER to INVERTER alive message, added 2026-08-07. See docs/design/can-signals.md for details.";
 CM_ SG_ 768 AliveCounter "Rolls over 0-255. Incremented when the frame is accepted by the TX buffer, NOT on bus ACK.";
-CM_ SG_ 768 ClusterStatus "Bit mask, NOT an enum: bit0=InvMsg1 rx ok, bit1=InvMsg2 rx ok, bit2=BLE app connected, bit3=DTC active.";
+CM_ SG_ 768 ClusterStatus "Bit mask, NOT an enum: bit0=InvMsg1 rx ok, bit1=InvMsg2 rx ok, bit2=BLE app connected, bit3=DTC active, bit4=UI render task alive.";
 CM_ SG_ 768 ClusterUptime "Seconds since boot, saturates at 65535 instead of wrapping.";
 BA_DEF_  "MultiplexExtEnabled" ENUM  "No","Yes";
 BA_DEF_ BU_  "NodeLayerModules" STRING ;

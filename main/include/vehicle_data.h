@@ -45,3 +45,14 @@ void vehicle_data_get(VehicleData_t *dst);
 // 그 speed가 옛날 값으로 되돌아감). 필드 단위 setter는 뮤텍스 안에서 해당 필드만 건드려
 // 이 문제를 원천 차단한다.
 void vehicle_data_set_link_status(bool rx_stale, bool tx_healthy);
+
+// UI 렌더 태스크 생존 표시(하트비트). lvgl_ui_task가 한 프레임 그릴 때마다 mark()를
+// 부르고, main/twai.c의 twai_tx_task가 last_ms()로 신선도를 확인해 ClusterAlive의
+// ClusterStatus bit4에 싣는다.
+//
+// **일부러 뮤텍스를 쓰지 않는다.** 감지하려는 대상 중 하나가 "UI가 뮤텍스를 잡거나
+// 기다리다 멈춘 상태"인데, 감지 수단이 같은 뮤텍스를 잡으면 감지하는 쪽도 같이 멈춰서
+// 영영 아무것도 못 알린다. 32bit 정렬 변수의 저장/적재는 Xtensa에서 원자적이므로
+// volatile 단일 워드로 충분하다(찢어진 값을 읽을 수 없음).
+void     ui_heartbeat_mark(void);
+uint32_t ui_heartbeat_last_ms(void);  // 0 = 부팅 후 한 번도 렌더링 안 됨
