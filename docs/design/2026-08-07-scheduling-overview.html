@@ -1,0 +1,718 @@
+<title>동시 통신 스케줄링 정리 — ESP32-S3 차량 클러스터</title>
+
+<style>
+  :root {
+    --ground:      #F4F6F8;
+    --surface:     #FFFFFF;
+    --surface-alt: #EAEEF1;
+    --ink:         #16212B;
+    --ink-soft:    #4A5B69;
+    --ink-faint:   #7B8B98;
+    --rule:        #D3DBE1;
+    --rule-soft:   #E3E9ED;
+    --core0:       #A65516;
+    --core0-bg:    #F7EDE4;
+    --core1:       #10666A;
+    --core1-bg:    #E2EFEF;
+    --alert:       #A3271F;
+    --alert-bg:    #F8E9E7;
+    --shadow:      0 1px 2px rgba(22, 33, 43, .06), 0 8px 24px -12px rgba(22, 33, 43, .18);
+
+    --display: "Segoe UI Variable Display", "Segoe UI Semibold", "Malgun Gothic", system-ui, sans-serif;
+    --body:    "Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+    --mono:    "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0D1319;
+      --surface:     #141C23;
+      --surface-alt: #1B252E;
+      --ink:         #DCE4EA;
+      --ink-soft:    #A2B0BB;
+      --ink-faint:   #75858F;
+      --rule:        #2A363F;
+      --rule-soft:   #202A32;
+      --core0:       #E39A56;
+      --core0-bg:    #2A1E13;
+      --core1:       #55BFC0;
+      --core1-bg:    #10262A;
+      --alert:       #E88A80;
+      --alert-bg:    #2B1614;
+      --shadow:      0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -12px rgba(0, 0, 0, .7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #0D1319;
+    --surface:     #141C23;
+    --surface-alt: #1B252E;
+    --ink:         #DCE4EA;
+    --ink-soft:    #A2B0BB;
+    --ink-faint:   #75858F;
+    --rule:        #2A363F;
+    --rule-soft:   #202A32;
+    --core0:       #E39A56;
+    --core0-bg:    #2A1E13;
+    --core1:       #55BFC0;
+    --core1-bg:    #10262A;
+    --alert:       #E88A80;
+    --alert-bg:    #2B1614;
+    --shadow:      0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px -12px rgba(0, 0, 0, .7);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16.5px;
+    line-height: 1.72;
+    margin: 0;
+    padding: 0 20px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 40px;
+  }
+
+  .col {
+    max-width: 68ch;
+  }
+
+  /* ---------- title ---------- */
+  header {
+    padding: 56px 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 650;
+    font-size: clamp(30px, 4.4vw, 46px);
+    line-height: 1.12;
+    letter-spacing: -.02em;
+    text-wrap: balance;
+    margin: 0;
+  }
+  .standfirst {
+    font-size: 18.5px;
+    color: var(--ink-soft);
+    max-width: 62ch;
+    margin: 0;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 28px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    border-top: 1px solid var(--rule);
+    padding-top: 14px;
+    margin-top: 6px;
+  }
+  .meta b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ---------- headings ---------- */
+  h2 {
+    font-family: var(--display);
+    font-weight: 640;
+    font-size: 25px;
+    letter-spacing: -.012em;
+    line-height: 1.25;
+    text-wrap: balance;
+    margin: 0 0 4px;
+  }
+  h3 {
+    font-family: var(--display);
+    font-weight: 620;
+    font-size: 18px;
+    letter-spacing: -.008em;
+    margin: 0 0 2px;
+  }
+  section {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  p { margin: 0; }
+  .col p + p { margin-top: 14px; }
+
+  /* ---------- core lane edge: structure encodes which core ---------- */
+  .lane {
+    border-left: 3px solid var(--rule);
+    padding: 2px 0 2px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .lane-0 { border-left-color: var(--core0); }
+  .lane-1 { border-left-color: var(--core1); }
+  .lane-tag {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    margin: 0;
+  }
+  .lane-0 .lane-tag { color: var(--core0); }
+  .lane-1 .lane-tag { color: var(--core1); }
+
+  /* ---------- callout ---------- */
+  .answer {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    box-shadow: var(--shadow);
+    padding: 26px 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .answer .lead {
+    font-family: var(--display);
+    font-size: 21px;
+    font-weight: 600;
+    line-height: 1.45;
+    letter-spacing: -.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .answer p { color: var(--ink-soft); font-size: 15.5px; }
+
+  .note {
+    background: var(--alert-bg);
+    border-left: 3px solid var(--alert);
+    padding: 16px 20px;
+    font-size: 15.5px;
+  }
+  .note b { color: var(--alert); }
+
+  /* ---------- tables ---------- */
+  .scroll {
+    overflow-x: auto;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    background: var(--surface);
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14.5px;
+    min-width: 640px;
+  }
+  caption {
+    caption-side: bottom;
+    text-align: left;
+    font-size: 13px;
+    color: var(--ink-faint);
+    padding: 12px 16px 0;
+    line-height: 1.6;
+  }
+  th, td {
+    text-align: left;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  thead th {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+    background: var(--surface-alt);
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, td.mono, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .chip {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .05em;
+    padding: 2px 8px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .chip-0 { background: var(--core0-bg); color: var(--core0); }
+  .chip-1 { background: var(--core1-bg); color: var(--core1); }
+  tr.ours td { background: transparent; }
+  tr.sys td { color: var(--ink-soft); }
+  .ok   { color: var(--core1); font-weight: 600; }
+  .bad  { color: var(--alert); font-weight: 600; }
+
+  code {
+    font-family: var(--mono);
+    font-size: .885em;
+    background: var(--surface-alt);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+
+  /* ---------- figure ---------- */
+  figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .figbox {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 22px;
+    overflow-x: auto;
+  }
+  figure svg { display: block; width: 100%; min-width: 700px; height: auto; }
+  figcaption { font-size: 13.5px; color: var(--ink-faint); line-height: 1.65; }
+
+  ul { margin: 0; padding-left: 1.15em; display: flex; flex-direction: column; gap: 9px; }
+  li::marker { color: var(--ink-faint); }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 18px;
+    font-size: 13.5px;
+    color: var(--ink-faint);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 640px) {
+    body { font-size: 16px; padding: 0 16px 72px; }
+    header { padding-top: 40px; }
+    .answer { padding: 20px 22px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">ESP32-S3 차량 클러스터 · 설계 정리</p>
+    <h1>여러 통신이 동시에 일어날 때 스케줄링은 어떻게 도는가</h1>
+    <p class="standfirst">CAN 수신·CAN 송신·BLE·화면 렌더링이 한 칩 위에서 같이 돌아갑니다. 무엇이 무엇을 밀어낼 수 있고, 어디가 서로 닿아 있으며, 한쪽이 잘못됐을 때 나머지가 어떻게 되는지 정리합니다.</p>
+    <div class="meta">
+      <span><b>작성</b> 2026-08-07</span>
+      <span><b>근거</b> main/main.c · twai.c · lvgl.c · ble.c · vehicle_data.c · sdkconfig</span>
+      <span><b>검증</b> 실기기 COM12 + Kvaser Leaf v3</span>
+    </div>
+  </header>
+
+  <section class="col">
+    <div class="answer">
+      <p class="lead">통신은 코어 0, 화면은 코어 1. 둘이 닿는 곳은 뮤텍스로 보호된 공유 구조체 하나뿐입니다.</p>
+      <p>CAN과 BLE는 같은 코어(0)에서 우선순위로 경쟁하고, LVGL 렌더링은 코어 1을 사실상 혼자 씁니다. 그래서 화면이 아무리 무거워져도 CAN 프레임을 놓치지 않고, 반대로 통신이 몰려도 화면 주사율이 떨어지지 않습니다. 대신 두 코어가 만나는 접점이 정확히 한 곳 있고, 그 지점의 성질이 이 구조 전체의 안전성을 결정합니다.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2>1. 누가 어느 코어에서 도는가</h2>
+      <p>우선순위는 숫자가 클수록 높고, FreeRTOS는 우선순위 선점형입니다. 높은 우선순위 태스크가 준비 상태가 되면 낮은 쪽을 즉시 밀어냅니다.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>태스크</th>
+            <th>코어</th>
+            <th class="num">우선순위</th>
+            <th>주기</th>
+            <th>대기 방식</th>
+            <th>출처</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="sys">
+            <td class="mono">bt_controller</td>
+            <td><span class="chip chip-0">CORE 0</span></td>
+            <td class="num">23</td>
+            <td>무선 이벤트</td>
+            <td>—</td>
+            <td>ESP-IDF</td>
+          </tr>
+          <tr class="sys">
+            <td class="mono">esp_timer</td>
+            <td><span class="chip chip-0">CORE 0</span></td>
+            <td class="num">22</td>
+            <td>타이머 만료</td>
+            <td>—</td>
+            <td>ESP-IDF</td>
+          </tr>
+          <tr class="sys">
+            <td class="mono">nimble_host</td>
+            <td><span class="chip chip-0">CORE 0</span></td>
+            <td class="num">21</td>
+            <td>BLE 이벤트</td>
+            <td>—</td>
+            <td>ESP-IDF</td>
+          </tr>
+          <tr class="ours">
+            <td class="mono">twai_rx</td>
+            <td><span class="chip chip-0">CORE 0</span></td>
+            <td class="num">10</td>
+            <td>프레임 도착 시</td>
+            <td class="mono">twai_receive(1000ms)</td>
+            <td>main.c</td>
+          </tr>
+          <tr class="ours">
+            <td class="mono">twai_tx</td>
+            <td><span class="chip chip-0">CORE 0</span></td>
+            <td class="num">9</td>
+            <td>500 ms</td>
+            <td class="mono">vTaskDelayUntil</td>
+            <td>main.c</td>
+          </tr>
+          <tr class="ours">
+            <td class="mono">ble_sync</td>
+            <td><span class="chip chip-0">CORE 0</span></td>
+            <td class="num">5</td>
+            <td>500 ms</td>
+            <td class="mono">vTaskDelay</td>
+            <td>main.c</td>
+          </tr>
+          <tr class="ours">
+            <td class="mono">lvgl_ui</td>
+            <td><span class="chip chip-1">CORE 1</span></td>
+            <td class="num">5</td>
+            <td>20 ms 목표</td>
+            <td class="mono">vTaskDelay(20ms)</td>
+            <td>main.c</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption>BLE 컨트롤러와 NimBLE 호스트는 <code>CONFIG_BT_CTRL_PINNED_TO_CORE_0</code> / <code>CONFIG_BT_NIMBLE_PINNED_TO_CORE_0</code>으로 코어 0에 고정돼 있습니다. 우선순위 21·22·23은 <code>configMAX_PRIORITIES = 25</code> 기준의 IDF 기본값입니다. FreeRTOS 틱은 100 Hz이므로 모든 지연의 분해능은 10 ms입니다.</caption>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2>2. 전체 그림</h2>
+      <p>네 개의 애플리케이션 태스크가 하나의 공유 구조체에서 만납니다. 코어 경계를 넘는 화살표는 그중 하나뿐입니다.</p>
+    </div>
+
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 920 520" role="img"
+             aria-label="코어 0에서 twai_rx, twai_tx, ble_sync, BLE 스택이 돌고 코어 1에서 lvgl_ui가 돈다. 네 태스크 모두 뮤텍스로 보호된 공유 구조체 VehicleData_t에 접근하며, lvgl_ui에서 오는 경로만이 코어 경계를 넘는 유일한 접점이다.">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+            <marker id="ar1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#10666A"/>
+            </marker>
+          </defs>
+
+          <!-- external hardware strip: CAN bus -->
+          <rect x="40" y="8" width="412" height="34" rx="2" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" opacity=".5"/>
+          <text x="246" y="30" text-anchor="middle" font-family="monospace" font-size="12.5" fill="currentColor" opacity=".75">CAN 버스 · 500 kbps</text>
+
+          <rect x="706" y="8" width="190" height="34" rx="2" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" opacity=".5"/>
+          <text x="801" y="30" text-anchor="middle" font-family="monospace" font-size="12.5" fill="currentColor" opacity=".75">BLE 앱</text>
+
+          <!-- CORE 0 lane -->
+          <rect x="16" y="60" width="888" height="150" rx="3" fill="#A65516" opacity=".05"/>
+          <rect x="16" y="60" width="888" height="150" rx="3" fill="none" stroke="#A65516" stroke-width="1" opacity=".45"/>
+          <text x="32" y="82" font-family="monospace" font-size="12" letter-spacing="1.4" fill="#A65516">CORE 0 · 통신</text>
+
+          <g font-family="monospace" font-size="13.5" fill="currentColor">
+            <rect x="40" y="96" width="190" height="62" rx="2" fill="none" stroke="#A65516" stroke-width="1.4"/>
+            <text x="135" y="122" text-anchor="middle">twai_rx</text>
+            <text x="135" y="141" text-anchor="middle" font-size="11.5" opacity=".6">prio 10 · 이벤트</text>
+
+            <rect x="262" y="96" width="190" height="62" rx="2" fill="none" stroke="#A65516" stroke-width="1.4"/>
+            <text x="357" y="122" text-anchor="middle">twai_tx</text>
+            <text x="357" y="141" text-anchor="middle" font-size="11.5" opacity=".6">prio 9 · 500 ms</text>
+
+            <rect x="484" y="96" width="190" height="62" rx="2" fill="none" stroke="#A65516" stroke-width="1.4"/>
+            <text x="579" y="122" text-anchor="middle">ble_sync</text>
+            <text x="579" y="141" text-anchor="middle" font-size="11.5" opacity=".6">prio 5 · 500 ms</text>
+
+            <rect x="706" y="96" width="190" height="62" rx="2" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"/>
+            <text x="801" y="122" text-anchor="middle" opacity=".8">BLE 스택</text>
+            <text x="801" y="141" text-anchor="middle" font-size="11.5" opacity=".6">prio 21 / 23</text>
+          </g>
+
+          <!-- CAN arrows -->
+          <g stroke="currentColor" stroke-width="1.3" fill="none" color="currentColor">
+            <line x1="135" y1="44" x2="135" y2="92" marker-end="url(#ar)"/>
+            <line x1="357" y1="94" x2="357" y2="46" marker-end="url(#ar)"/>
+          </g>
+          <text x="145" y="72" font-family="monospace" font-size="11" fill="currentColor" opacity=".7">0x100 / 0x200</text>
+          <text x="367" y="72" font-family="monospace" font-size="11" fill="currentColor" opacity=".7">0x300 Alive</text>
+
+          <!-- BLE arrows -->
+          <g stroke="currentColor" stroke-width="1.3" fill="none" color="currentColor">
+            <line x1="678" y1="127" x2="702" y2="127" marker-end="url(#ar)"/>
+            <line x1="801" y1="94" x2="801" y2="46" marker-end="url(#ar)"/>
+          </g>
+
+          <!-- shared data box straddling the boundary -->
+          <rect x="300" y="238" width="320" height="66" rx="3" fill="var(--surface-alt)" stroke="currentColor" stroke-width="1.6"/>
+          <text x="460" y="264" text-anchor="middle" font-family="monospace" font-size="13.5" fill="currentColor">VehicleData_t</text>
+          <text x="460" y="285" text-anchor="middle" font-family="monospace" font-size="11.5" fill="currentColor" opacity=".65">xVehicleMutex 보호 · 구조체 복사만</text>
+
+          <!-- arrows into shared box from core 0 -->
+          <g stroke="currentColor" stroke-width="1.3" fill="none" color="currentColor">
+            <path d="M 135 160 L 135 210 L 320 210 L 320 234" marker-end="url(#ar)"/>
+            <path d="M 357 160 L 357 234" marker-end="url(#ar)"/>
+            <path d="M 579 160 L 579 210 L 600 210 L 600 234" marker-end="url(#ar)"/>
+          </g>
+          <text x="150" y="204" font-family="monospace" font-size="11" fill="currentColor" opacity=".7">쓰기</text>
+          <text x="366" y="204" font-family="monospace" font-size="11" fill="currentColor" opacity=".7">읽기 + 링크상태 쓰기</text>
+          <text x="510" y="204" font-family="monospace" font-size="11" fill="currentColor" opacity=".7">읽기</text>
+
+          <!-- the one cross-core arrow -->
+          <g stroke="#10666A" stroke-width="2.4" fill="none" color="#10666A">
+            <line x1="460" y1="376" x2="460" y2="308" marker-end="url(#ar1)"/>
+          </g>
+          <text x="474" y="345" font-family="monospace" font-size="11.5" fill="#10666A" font-weight="bold">유일한 코어 간 접점</text>
+          <text x="474" y="362" font-family="monospace" font-size="11" fill="#10666A" opacity=".8">20 ms 읽기</text>
+
+          <!-- CORE 1 lane -->
+          <rect x="16" y="380" width="888" height="122" rx="3" fill="#10666A" opacity=".05"/>
+          <rect x="16" y="380" width="888" height="122" rx="3" fill="none" stroke="#10666A" stroke-width="1" opacity=".45"/>
+          <text x="32" y="402" font-family="monospace" font-size="12" letter-spacing="1.4" fill="#10666A">CORE 1 · 렌더링</text>
+
+          <g font-family="monospace" font-size="13.5" fill="currentColor">
+            <rect x="365" y="414" width="190" height="62" rx="2" fill="none" stroke="#10666A" stroke-width="1.4"/>
+            <text x="460" y="440" text-anchor="middle">lvgl_ui</text>
+            <text x="460" y="459" text-anchor="middle" font-size="11.5" opacity=".6">prio 5 · 20 ms 목표</text>
+
+            <rect x="640" y="414" width="190" height="62" rx="2" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" opacity=".55"/>
+            <text x="735" y="440" text-anchor="middle" opacity=".8">RGB LCD</text>
+            <text x="735" y="459" text-anchor="middle" font-size="11.5" opacity=".6">800 × 480</text>
+          </g>
+
+          <g stroke="currentColor" stroke-width="1.3" fill="none" color="currentColor">
+            <line x1="559" y1="445" x2="636" y2="445" marker-end="url(#ar)"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>코어 0의 세 태스크와 코어 1의 렌더링 태스크가 모두 하나의 공유 구조체에서 만납니다. 코어 경계를 넘는 경로는 굵은 청록색 화살표 하나뿐이고, 나머지 결합은 전부 코어 0 내부에서 우선순위로 정리됩니다.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2>3. 동시에 몰리면 실제로 무슨 일이 일어나는가</h2>
+    </div>
+
+    <div class="col lane lane-0">
+      <p class="lane-tag">코어 0 — CAN과 BLE가 경쟁하는 곳</p>
+      <p>BLE 스택(21·23)이 CAN 태스크(10·9)보다 훨씬 높습니다. 그래서 <b>무선 이벤트가 발생하면 CAN 처리가 즉시 밀려납니다.</b> 얼핏 위험해 보이지만 실제로는 문제가 되지 않습니다. TWAI 컨트롤러가 프레임을 받으면 <b>ISR이 하드웨어 RX 큐에 먼저 넣기</b> 때문입니다. <code>twai_rx</code> 태스크는 그 큐에서 꺼내기만 하므로, 태스크가 몇 밀리초 밀려도 프레임은 큐에 그대로 남아 있습니다.</p>
+      <p>따라서 실제 한계는 "태스크가 밀리는 시간"이 아니라 <b>"큐가 5개를 넘기기 전에 태스크가 돌아오는가"</b>입니다. 수신 대상이 0x100(초당 10회)과 0x200(초당 5회)뿐이라 큐가 가득 차려면 태스크가 약 330 ms 동안 한 번도 못 도는 상황이어야 합니다. BLE 이벤트 처리는 그보다 두 자릿수 짧습니다.</p>
+      <p>같은 우선순위끼리는 라운드로빈으로 10 ms씩 번갈아 돕니다. 다만 코어 0에서 우선순위 5는 <code>ble_sync</code> 하나뿐이라 실제로 발생하지 않습니다.</p>
+    </div>
+
+    <div class="col lane lane-1">
+      <p class="lane-tag">코어 1 — 렌더링 전용</p>
+      <p><code>lvgl_ui</code>가 코어 1에서 사실상 혼자 돕니다. 통신 태스크가 아무리 바빠도 화면 갱신을 밀어내지 못하고, 반대로 렌더링이 아무리 무거워도 CAN 수신에 영향을 주지 않습니다. <b>이 코어 분리가 이 구조의 핵심 설계 결정입니다.</b></p>
+      <p>다만 현재 렌더링은 코어 1을 여유 있게 쓰고 있지 않습니다. 아래 실측을 참고하십시오.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>측정 항목</th>
+            <th class="num">실측값</th>
+            <th>의미</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>CAN 수신 최대 부하</td>
+            <td class="num">초당 15 프레임</td>
+            <td>어셉턴스 필터가 0x100/0x200만 통과시키므로 버스가 아무리 붐벼도 이 값이 상한입니다.</td>
+          </tr>
+          <tr>
+            <td>CAN 송신</td>
+            <td class="num">초당 2 프레임</td>
+            <td>ClusterAlive 0x300, 500 ms 고정.</td>
+          </tr>
+          <tr>
+            <td>BLE notify</td>
+            <td class="num">초당 2 회 × 2</td>
+            <td>바이너리 + 텍스트 characteristic 각각.</td>
+          </tr>
+          <tr>
+            <td><code>lv_timer_handler</code> 1회</td>
+            <td class="num">평균 33 ms</td>
+            <td class="bad">20 ms 예산 초과 — 매 프레임 초과합니다.</td>
+          </tr>
+          <tr>
+            <td>렌더 루프 한 바퀴</td>
+            <td class="num">평균 60 ms</td>
+            <td>실효 약 17 fps. 코어 1의 약 55 %를 렌더링이 점유합니다.</td>
+          </tr>
+          <tr>
+            <td>패널 플러시</td>
+            <td class="num">평균 0.65 ms</td>
+            <td>병목은 전송이 아니라 LVGL 소프트웨어 래스터라이즈입니다.</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption>실기기 부팅 로그(COM12)의 <code>frame timing</code> 진단 출력 기준. 이 진단 로그 자체가 <code>main/lvgl.c</code>에 임시로 들어가 있는 코드입니다.</caption>
+    </div>
+
+    <div class="col note">
+      <b>여유가 없는 쪽은 통신이 아니라 렌더링입니다.</b> 코어 0은 초당 19 프레임 남짓을 처리하면 되지만, 코어 1은 매 프레임 예산을 넘기고 있습니다. 통신을 더 얹어도 스케줄링상 문제가 없는 반면, 화면 요소를 더하는 쪽은 즉시 프레임레이트로 나타납니다.
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2>4. 서로 닿아 있는 지점</h2>
+      <p>코어를 나눠도 자원을 공유하는 곳에서는 다시 만납니다. 현재 네 곳입니다.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>공유 자원</th>
+            <th>누가 쓰는가</th>
+            <th>점유 시간</th>
+            <th>위험도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">xVehicleMutex</td>
+            <td>네 태스크 전부 (코어 경계를 넘음)</td>
+            <td>구조체 복사만, 마이크로초 단위</td>
+            <td class="ok">낮음</td>
+          </tr>
+          <tr>
+            <td class="mono">s_twai_lock</td>
+            <td><code>twai_rx</code> ↔ <code>twai_tx</code></td>
+            <td>드라이버 재설치 시에만 길어짐</td>
+            <td class="ok">낮음</td>
+          </tr>
+          <tr>
+            <td>I2C 버스 (GPIO 8/9)</td>
+            <td>GT911 터치 · CH422G 확장기</td>
+            <td>CH422G는 부팅 시에만 접근</td>
+            <td class="ok">낮음</td>
+          </tr>
+          <tr>
+            <td>UART0 콘솔 로그</td>
+            <td>모든 태스크</td>
+            <td>한 줄당 약 7 ms, 락으로 직렬화</td>
+            <td class="bad">현재 가장 큼</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption>UART 로그가 유일하게 실질적인 경합입니다. <code>twai_rx</code>가 프레임마다 raw 덤프를 찍고 있어 초당 약 100 ms를 UART 출력에 씁니다. 벤치 테스트용으로 <code>HARNESS-TODO</code> 표시가 붙어 있으며 실차 연결 전 제거 대상입니다.</caption>
+    </div>
+
+    <div class="col">
+      <p><code>xVehicleMutex</code>가 두 코어를 잇는 유일한 지점이므로, 이 락의 성질이 구조 전체의 안전성을 결정합니다. 현재는 <b>모든 호출자가 구조체를 복사하고 즉시 반납</b>하며 렌더링·전송 같은 긴 작업은 전부 락 밖에서 합니다. 덕분에 실질적 위험이 거의 없습니다. 다만 이는 <b>지금 코드가 그렇게 짜여 있다는 뜻이지 구조가 강제하는 것은 아닙니다.</b> 락을 잡은 채 오래 걸리는 작업을 하는 코드가 나중에 추가되면 이 표의 첫 줄은 즉시 "높음"이 됩니다.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="col">
+      <h2>5. 한쪽이 잘못되면 나머지는 어떻게 되는가</h2>
+      <p>담당자가 물었던 "CAN이 들어오는 중에 UI에 오류가 나면"에 대한 답입니다.</p>
+    </div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>상황</th>
+            <th>CAN 동작</th>
+            <th>화면</th>
+            <th>시스템 반응</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>UI가 느려짐 · 멈춤<br><span style="color:var(--ink-faint);font-size:13px">(양보 없이 계속 도는 경우)</span></td>
+            <td class="ok">정상 계속</td>
+            <td>얼어붙음</td>
+            <td>태스크 워치독 5초 → <b>경고만, 리셋 없음</b></td>
+          </tr>
+          <tr>
+            <td>UI 크래시<br><span style="color:var(--ink-faint);font-size:13px">(잘못된 메모리 접근 등)</span></td>
+            <td class="bad">같이 끊김</td>
+            <td>꺼짐</td>
+            <td>패닉 → <b>칩 전체 재부팅</b>, 약 1.2초 후 CAN 복귀</td>
+          </tr>
+          <tr>
+            <td>UI가 뮤텍스를 잡은 채 멈춤</td>
+            <td class="bad">영구 정지</td>
+            <td>얼어붙음</td>
+            <td>아무 감지 없이 조용히 멈춤</td>
+          </tr>
+          <tr>
+            <td>인터럽트 지연 300 ms 초과</td>
+            <td class="bad">같이 끊김</td>
+            <td>꺼짐</td>
+            <td>인터럽트 워치독 → 재부팅</td>
+          </tr>
+        </tbody>
+      </table>
+      <caption><code>CONFIG_ESP_TASK_WDT_TIMEOUT_S=5</code>이고 <code>CONFIG_ESP_TASK_WDT_PANIC</code>은 꺼져 있어 태스크 워치독은 경고만 냅니다. 반면 <code>CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y</code>, 재부팅 지연 0초라 실제 크래시는 즉시 재부팅입니다.</caption>
+    </div>
+
+    <div class="col">
+      <h3>재부팅은 오히려 깔끔하게 처리됩니다</h3>
+      <p>두 번째 줄은 걱정할 상황이 아닙니다. UI가 크래시해서 재부팅되면 Alive가 약 1.2초 끊겼다가 <b>uptime 값이 0부터 다시 시작</b>하므로, 인버터 쪽에서 "재부팅했다"를 명확히 구분할 수 있습니다. ClusterAlive의 uptime을 롤오버시키지 않고 65535초에서 고정시킨 결정이 여기서 값을 합니다.</p>
+
+      <h3>진짜 구멍이었던 첫 번째 줄 — 해결</h3>
+      <p>UI만 멈춘 경우, CAN은 멀쩡하므로 <b>Alive가 계속 정상으로 나갔습니다.</b> 인버터 입장에서 클러스터는 완전히 건강해 보이는데 운전자는 얼어붙은 화면을 보는 상태입니다. CAN 수신이 끊겼을 때 화면을 흐리게 처리하는 기능도 UI가 살아 있어야 그려지므로 이 상황에서는 소용이 없습니다. 즉 <b>CAN으로 내보내는 것 말고는 알릴 방법이 없습니다.</b></p>
+      <p>그래서 ClusterAlive의 상태 바이트에 UI 하트비트 비트를 추가했습니다. 렌더링 태스크가 한 프레임을 끝까지 처리할 때마다 시각을 남기고, <code>twai_tx</code>가 500 ms마다 그 값이 1초 이내인지 확인해 <b>bit4</b>에 싣습니다. CAN 수신 끊김을 감지하는 방식과 동일하며 새 메시지도 새 구조도 필요 없습니다.</p>
+      <p>설계상 두 가지를 일부러 그렇게 했습니다. 하트비트는 <code>lv_timer_handler()</code>가 <b>반환한 뒤</b>에 기록합니다 — 루프 진입 시점에 찍으면 "태스크가 깨어났다"만 보증하지만, 반환 후에 찍으면 "한 프레임을 실제로 끝냈다"를 보증합니다. 그리고 하트비트는 <b>뮤텍스를 쓰지 않습니다</b> — 감지하려는 상황 중 하나가 "UI가 뮤텍스에 걸려 멈춘 상태"인데, 감지 수단이 같은 뮤텍스를 잡으면 감지하는 쪽도 같이 멈춥니다.</p>
+    </div>
+
+    <div class="col note" style="background:var(--core1-bg); border-left-color:var(--core1)">
+      <b style="color:var(--core1)">실기기 검증 완료.</b> Kvaser로 0x300을 받아 해석한 결과, 부팅 직후 아직 첫 프레임을 그리지 못한 순간의 <code>status=0x00</code>과 렌더링 시작 후의 <code>status=0x10</code>이 그대로 잡혔습니다. 결함을 주입하지 않고도 양쪽 상태가 실기기에서 확인된 셈입니다.
+    </div>
+
+    <div class="col">
+      <h3>검증 중에 따로 발견된 것 — 묵은 Alive 방출</h3>
+      <p>0x300을 읽다가 예상 밖의 값을 봤습니다. 카운터는 0부터 연속인데 uptime이 <code>0, 1, 1, 2, 2, 3</code>에서 갑자기 <code>89</code>로 뛰었습니다.</p>
+      <p>원인은 버스에 ACK를 줄 노드가 없는 동안 Alive가 나가지 못하고 <b>송신 큐에 쌓인 채 재전송을 반복</b>하고 있었던 것입니다. 리스너가 채널을 열자 ACK가 생기면서 89초 전에 만들어진 payload 6개가 한꺼번에 방출됐습니다. Alive에서 이건 단순히 무의미한 정도가 아니라 해롭습니다 — <b>인버터가 uptime 0을 보고 "방금 부팅했다"고 오판</b>합니다.</p>
+      <p>직전 Alive가 아직 안 나갔으면 이번 주기를 건너뛰도록 고쳤습니다. 재전송 자체를 끄는 방법도 있지만, 그러면 버스가 붐빌 때 정상적으로 발생하는 중재 실패까지 버려서 Alive 도달률이 떨어집니다. 수정 후 묵은 프레임은 <b>6개에서 1개로</b> 줄었습니다.</p>
+      <p>남은 1개는 없앨 수 없습니다. 버스가 죽는 순간 <b>이미 하드웨어 송신 버퍼로 넘어간</b> 프레임이라 큐 쪽 조치가 닿지 않습니다. <b>수신측은 첫 Alive 한 개를 신뢰하지 말고 두 번째 프레임부터 판단하는 편이 안전합니다</b> — 인버터 팀에 전달이 필요한 사항입니다.</p>
+    </div>
+  </section>
+
+  <section class="col">
+    <h2>6. 정리</h2>
+    <ul>
+      <li><b>코어 분리가 1차 방어선입니다.</b> 통신(코어 0)과 렌더링(코어 1)이 서로를 밀어내지 못합니다.</li>
+      <li><b>코어 0 내부는 우선순위와 하드웨어 큐로 정리됩니다.</b> BLE가 CAN 태스크를 밀어내도 프레임은 ISR이 큐에 넣어두므로 유실되지 않습니다.</li>
+      <li><b>수신 부하에는 상한이 있습니다.</b> 어셉턴스 필터 덕분에 실차 버스에 붙여도 초당 15 프레임을 넘지 않습니다.</li>
+      <li><b>여유가 없는 쪽은 렌더링입니다.</b> 통신은 확장 여지가 크고, 화면은 이미 예산을 초과하고 있습니다.</li>
+      <li><b>UI가 멈추면 CAN으로 알립니다.</b> ClusterAlive bit4에 렌더 하트비트를 실어, 화면이 멈춰도 인버터가 알 수 있게 했습니다. 실기기 검증 완료.</li>
+      <li><b>인버터 팀에 전달할 사항이 하나 있습니다.</b> 버스 복구 직후 첫 Alive 한 개는 몇 초 전 값일 수 있으므로 두 번째 프레임부터 판단해야 합니다.</li>
+    </ul>
+  </section>
+
+  <footer>
+    이 문서의 모든 수치는 저장소의 실제 코드와 <code>sdkconfig</code>, 그리고 실기기 로그에서 확인한 값입니다. 태스크 배치를 바꾸거나 새 태스크를 추가할 때 이 문서를 함께 갱신하십시오.
+  </footer>
+
+</div>
