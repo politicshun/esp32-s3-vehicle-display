@@ -3,9 +3,14 @@
 
 ## CAN (J6 커넥터 ↔ TJA1051)
 - 넷 `NLCANL` = { J6 pin1, TJA1051(U7) pin6 }
-- 넷 `NLCANH` = { J6 pin2, TJA1051(U7) pin7 }
+- 넷 `NLCANH` = { J6 pin2, TJA1051(U7) pin7, R75 pin1 }
 - **주의**: 과거 PPT 슬라이드 7의 "J6 pin1=CAN_H, pin2=CAN_L" 표기는 스키매틱과 반대로 되어 있었음(정정됨).
 - MCU ↔ TJA1051(TXD/RXD): `pin_config.h`의 `CAN_TX_GPIO_NUM`(GPIO20) / `CAN_RX_GPIO_NUM`(GPIO19)
+- **CAN 종단저항 (R75, 120Ω)**: SMD 고정저항이 아니라 **3핀 헤더 + 점퍼 캡 선택식**.
+  보드 실크스크린 `CAN 120R NC` 라벨 (J5 스크류터미널 옆, RS-485용 동일 패턴 헤더와 나란히 위치).
+  점퍼를 `120R` 쪽에 꽂으면 종단 활성화, `NC` 쪽이면 개방. 2026-08-18 실측: 점퍼가 헐겁게
+  걸쳐있으면 완전 개방이 아니라 수십 kΩ대 고저항 접촉으로 측정될 수 있음(실제로 28.8kΩ →
+  재장착 후 116Ω으로 정상화, 사용자 확인). 출처: `ESP32-S3-Touch-LCD-7-Sch.pdf` 넷리스트 대조.
 
 ## CAN/USB 스위치 (U9, FSUSB42UMX)
 - SEL 핀 = 넷 `NLEXIO5` = `NLUSB_SEL` = CH422G EXIO5
