@@ -1,0 +1,15 @@
+:root{
+  --dur-instant:80ms; /* @kind other */    /* telltale on/off, press feedback */
+  --dur-fast:140ms; /* @kind other */      /* hover, chip select */
+  --dur-base:220ms; /* @kind other */      /* panel + sheet transitions */
+  --dur-slow:400ms; /* @kind other */      /* mode change, screen swap */
+  --dur-sweep:900ms; /* @kind other */     /* power-on needle/arc sweep */
+
+  --ease-standard:cubic-bezier(.2,0,0,1); /* @kind other */
+  --ease-exit:cubic-bezier(.4,0,1,1); /* @kind other */
+  --ease-enter:cubic-bezier(0,0,.2,1); /* @kind other */
+  --ease-readout:cubic-bezier(.33,1,.68,1); /* @kind other */ /* numeric counters settle, never bounce */
+
+  --pulse-warning:1200ms; /* @kind other */ /* caution telltale blink period */
+  --pulse-turn:800ms; /* @kind other */     /* turn-indicator blink period */
+}

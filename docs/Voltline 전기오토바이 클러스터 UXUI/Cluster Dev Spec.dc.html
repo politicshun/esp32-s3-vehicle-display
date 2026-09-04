@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/colors.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/typography.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/shape.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/motion.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/styles.css">
+<script src="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/_ds_bundle.js"></script>
+<script src="./doc-page.js"></script>
+<style>
+  doc-page:not(:defined){visibility:hidden}
+  body { margin:0; }
+  a { color:#00776C; text-decoration:none; }
+  a:hover { color:#00857A; }
+</style>
+</helmet>
+
+<doc-page margin="0.7in">
+  <div style="font-family:var(--font-core);color:#0A0E12;font-size:10.5pt;line-height:1.5">
+
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px;border-bottom:2px solid #0A0E12;padding-bottom:10px;margin-bottom:18px">
+      <div>
+        <div style="font-size:8.5pt;letter-spacing:.22em;text-transform:uppercase;font-weight:700;color:#5E7079">Voltline</div>
+        <h1 style="margin:4px 0 2px;font-size:20pt;font-weight:700;letter-spacing:-0.01em">Instrument cluster — LVGL implementation spec</h1>
+        <div style="font-size:9.5pt;color:#40525C">800×480 landscape · 5 in and 7 in panels · ESP32-S3 + LVGL v9 core widgets · touch only</div>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:8.5pt;color:#5E7079;text-align:right;white-space:nowrap">Rev A<br>Design source:<br>Voltline Cluster.dc.html</div>
+    </div>
+
+    <p style="margin:0 0 16px;font-size:10.5pt">This document is the build contract for the cluster UI. Every number here is measured from the interactive mockup and is normative: geometry in device pixels, colour in hex, type in px. Where a value is a policy rather than a pixel (thresholds, update rates, motion budget) it is marked as such. Anything not specified here is the implementer's choice, but must not move a fixed element or change a signal colour.</p>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">1 · Hardware and canvas</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:9.5pt">
+      <tbody>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;width:32%;color:#40525C">Framebuffer</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">800 × 480 px, landscape, RGB565. Identical for both panel sizes.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;color:#40525C">Panels</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">5.0 in ≈ 188 ppi (1 px ≈ 0.135 mm) · 7.0 in ≈ 133 ppi (1 px ≈ 0.191 mm)</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;color:#40525C">Touch targets</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Minimum 56 px on the 5 in panel, 48 px on the 7 in panel (≈ 7.6 mm / 9.2 mm). Applies to mode pill, buttons, sliders, switches, DTC chip, page dots' hit area.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;color:#40525C">Safe area</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">8 px inset on all four edges. No text, glyph or border inside it.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;color:#40525C">Band structure</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Top rail 44 px · gap 8 · content 360 px · gap 8 · status row 44 px. Fixed on every screen; the rail and status row never move or unmount.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;color:#40525C">Scrolling</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">None, anywhere. Content that does not fit is a design bug, not a scroll case.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">2 · Colour</h2>
+    <p style="margin:0 0 8px;font-size:9.5pt;color:#40525C">Two themes, same widget tree — swap palette values only. Signal colours are fixed by automotive convention: never retint, never use decoratively, never fill an area larger than a lamp, chip or bar.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <thead>
+        <tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3;font-size:8.5pt;letter-spacing:.08em;text-transform:uppercase">Role</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3;font-size:8.5pt;letter-spacing:.08em;text-transform:uppercase">Night</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3;font-size:8.5pt;letter-spacing:.08em;text-transform:uppercase">Day</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3;font-size:8.5pt;letter-spacing:.08em;text-transform:uppercase">Used for</th></tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">bg</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#06090C</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#E7ECEF</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Screen background</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">panel</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#0E1419</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#FFFFFF</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Every card</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">hairline</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#1B242C</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#D3DCE0</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Card border 1 px, band dividers</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">line-default</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#26323C</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#B9C5CB</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Battery cell shell, DTC chip border</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">text-primary</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#EEF3F5</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#0A0E12</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">All readout numerals, zero tick</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">text-secondary</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#7F9099</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#40525C</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Field labels (BATTERY, RANGE, TRIP A…)</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">text-tertiary</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#586B76</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#5E7079</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Units, zero label, mono metadata</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">accent (current)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#00E5D0</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#00776C</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Mode pill, RANGE value, active page dot, regen fill</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">track-empty</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#1B242C</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#CBD5D9</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Unlit cells in every bar</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">signal-go</td><td colspan="2" style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#3ED26B (both themes)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Turn indicators, READY</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">signal-beam</td><td colspan="2" style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#3B82F6</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">High beam only — never anything else</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">signal-caution</td><td colspan="2" style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#FFB020</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Brake lamp, TEMP CHECK, power side of the flow bar, LIMITED</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">signal-critical</td><td colspan="2" style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#FF4438</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">EV warning lamp, DTC chip, critical banner</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">energy ramp</td><td colspan="2" style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">#3ED26B → #C8E44A → #FFB020 → #FF4438</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Battery cells at &gt;55 / &gt;30 / &gt;12 / ≤12 %</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">3 · Type</h2>
+    <p style="margin:0 0 8px;font-size:9.5pt;color:#40525C">Three families. All numerals tabular so digits do not jitter. Convert each size as its own LVGL font with the narrowest glyph subset that size needs — this is the main flash cost of the UI.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <thead><tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Role</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Family / weight</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Size</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Subset to convert</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Speed numeral</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Barlow Semi Condensed 600, italic</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">250 px (1–2 digits)<br>190 px (3 digits)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0–9 only, two sizes</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Card primary value</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Barlow Semi Condensed 600</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">60 px (SOC) · 46 px</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0–9 . , space</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Card secondary value</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Barlow Semi Condensed 600</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">34 px · 22 px (pack V) · 20 px (temps)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0–9 . , space ° C V</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Field label</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Archivo 600, uppercase, +0.08 em</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">13 px (cards) · 11 px (status row)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">A–Z only</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Unit</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Archivo 400/500</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">21 px (km/h) · 18 px · 14 px · 13 px</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">k m h % ° C V W / space</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Mode pill / status word</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Archivo 600–700, uppercase</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">15 px (+0.16 em) · 17 px (+0.10 em)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">A–Z</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Clock, VIN, firmware</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">JetBrains Mono 500</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">21 px (clock) · 12 px (metadata)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0–9 A–Z . : · • space</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:8px 0 0;font-size:9pt;color:#5E7079">Minimum on-screen size is 11 px and only for units and status-row labels. Readouts use −0.02 em tracking and 0.86–0.9 line-height.</p>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">4 · Widget map</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <thead><tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Element</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">LVGL object</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Parameters and notes</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Screen paging</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">lv_tileview</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">4 tiles in one row, LV_DIR_HOR: Ride · Trip · Faults · Setup. Charging is a 5th tile forced on plug-in and locked until unplug.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Page dots</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">4 × lv_obj</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">8 px circles, 8 px gap. Active = accent, inactive = #38474F. Recolour on the tileview VALUE_CHANGED event; tappable (44 px invisible hit pad).</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Speed numeral</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">lv_label</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Centred in the middle column. Swap to the 190 px font at ≥100. Rewrite only when the integer changes.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Mode pill</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">lv_button</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">h30 (56 px hit pad), radius pill, 1.5 px accent border, transparent fill, accent text. Tap cycles Eco → City → Sport.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Battery cells</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">10 × lv_obj</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Inside a 22 px shell: 1 px line-default border, radius 3, padding 3, cell gap 3, plus a 3×10 nub on the right. Cells lit = round(SOC/10).</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Regen / power strip</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">41 × lv_obj</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">20 regen cells (accent) + centre zero tick (text-primary, half width) + 20 power cells (caution). Height 18, gap 2. Regen fills right-to-left from the tick.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Telltales</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">lv_image + recolor</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">26 px glyph in a 34 px box, gap 26, right-aligned with 24 px inset. Off = 18 % opacity (never hidden). Convert the SVGs in <span style="font-family:var(--font-mono)">icons/</span> to 1-bit alpha C arrays.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Cards</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">lv_obj + lv_flex</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">panel fill, 1 px hairline border, radius 14, padding 14–16, no shadow. Ride side cards 172 px wide; column gap 16; grid gap 10.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Alert banner</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">lv_obj + 2 lv_label</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">58 px tall, 1 px signal border, 10–14 % signal wash fill, radius 14, mono code right-aligned. Docks in the Faults tile; never an overlay while riding.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Setup controls</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">lv_slider · lv_switch · lv_buttonmatrix</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Brightness and regen level as sliders, auto headlight / auto day-night as switches, unit choice as a 2-key matrix.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Layout engine</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono);color:#00776C">lv_flex / lv_grid</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Status row is a 3-zone grid: auto / 1fr / auto — telemetry left, alerts centred, dots + status right.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">5 · Screens</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <thead><tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Tile</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Content</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;width:18%"><strong>Ride</strong></td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Grid 172 / 1fr / 172, rows 42 / 1fr. Row 1 centre: mode pill. Left card: BATTERY % + cell bar + RANGE. Centre: speed numeral (vertically centred) + km/h, then REGEN ↔ POWER strip with zero tick and the active side's kW value. Right card: TRIP A + ODO.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0"><strong>Trip</strong></td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Title row (TRIP A · since / elapsed). 3 × 2 card grid at 46 px: distance, avg speed, max speed, energy, regen, ride time. Bottom 64 px strip at 34 px: ODO, RANGE, BATTERY, Reset trip button.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0"><strong>Faults</strong></td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Title row (active fault count · VIN / FW). Alert banner stack, newest first, critical above caution. Fixed 126 px card row at 46 px: motor, controller, pack, cell delta.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0"><strong>Setup</strong></td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">2 × 2 cards: Display (units, brightness) · Vehicle (auto headlight, regen level) · Phone/BLE (link state, device, pairing code, connect) · System (auto day/night, FW + serial).</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0"><strong>Charging</strong></td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Forced on plug-in, exits on unplug. SOC at 120 px, cell bar, time-to-full and charge power, pack V and cell temp, firmware-install note. Speed and power are pinned to 0.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">6 · Data contract</h2>
+    <p style="margin:0 0 8px;font-size:9.5pt;color:#40525C">Ranges are display ranges — the UI must render the full range without reflow or clipping. Refresh is a policy: faster is wasted redraw, slower reads as a frozen instrument.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <thead><tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Signal</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Range</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Format</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Refresh</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Speed</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0–199 km/h (0–124 mph)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">integer, no decimals</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">10 Hz sample, redraw on integer change</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Motor power</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">−3.0 … +14.0 kW</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">1 decimal, sign by side not by minus</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">5 Hz</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">SOC</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0–100 %</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">integer</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0.2 Hz, or immediately on a 10-cell boundary</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Range estimate</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0–200 km</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">integer; blank (—) if untrustworthy</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0.2 Hz</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Trip / odo</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0–999.9 km / 0–999 999 km</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">1 decimal / thin-space thousands</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">1 Hz</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Pack voltage</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">60.0–120.0 V</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">1 decimal</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">1 Hz</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Motor / controller temp</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">−20 … 150 °C / −20 … 120 °C</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">integer</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">1 Hz</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Ambient temp</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">−20 … 60 °C</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">integer</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">0.1 Hz</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Clock</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">00:00–23:59</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">24 h, zero-padded</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">on minute change</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">BLE link</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">off / pairing / linked + RSSI</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">lamp + label</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">on change</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Signal loss</td><td colspan="3" style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Any stale signal (no frame for 2 s): show <span style="font-family:var(--font-mono)">—</span> in place of the numeral, keep the label and unit, never show a last-known value as if live.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">7 · Warnings, thresholds, DTCs</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <thead><tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Condition</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Trigger</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">UI response</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Motor over temperature</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">motor &gt; 95 °C</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">TEMP CHECK in the status alert zone (amber), motor value turns amber, critical banner <span style="font-family:var(--font-mono)">E-412</span> on the Faults tile, status word → LIMITED</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Battery low</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">SOC &lt; 12 %</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">SOC numeral amber (&lt; 12 % red), cells red, range recalculated</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Brake system</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">brake fault flag</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Brake lamp (amber) in the rail, caution banner <span style="font-family:var(--font-mono)">C-118</span></td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Any active DTC</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">count ≥ 1</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">EV warning lamp (red) in the rail + <span style="font-family:var(--font-mono)">DTC nn</span> chip in the alert zone; tapping the chip jumps to the Faults tile. When the chip is shown, TEMP CHECK collapses to its glyph.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Turn indicators</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">indicator relay</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Green lamp, 800 ms hard-step blink (no fade) — legally required cadence</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">High beam</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">beam switch</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Blue lamp. Blue is reserved for high beam and nothing else.</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:8px 0 0;font-size:9pt;color:#5E7079">Fault copy pattern: plain-language title / one-line rider consequence / mono code. Never "error", never an apology. A fault always states what the rider should do.</p>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">8 · Motion budget</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <thead><tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Animation</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Full</th><th style="text-align:left;padding:5px 8px;border-bottom:1px solid #8A9AA3">Lite (fallback)</th></tr></thead>
+      <tbody>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Bar cell recolour, lamp on/off</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">250 ms linear / 80 ms</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">snap</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Numeral colour change</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">260 ms</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">snap</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Tile change (swipe)</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">300–400 ms slide</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">cut</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Speed glow behind the numeral</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">opacity tracks speed, 250 ms fade</td><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">off — drop this first if frames are short</td></tr>
+        <tr><td style="padding:4px 8px;border-bottom:1px solid #D3DCE0">Turn / caution blink</td><td colspan="2" style="padding:4px 8px;border-bottom:1px solid #D3DCE0">800 ms / 1200 ms hard step in both modes — never disabled, never eased</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:8px 0 0;font-size:9pt;color:#5E7079">Easing: cubic-bezier(.2,0,0,1) standard, (.33,1,.68,1) for numeric settle. Nothing bounces, nothing springs, nothing loops apart from the two legal blinks. Pick Full or Lite per board after measuring the real frame rate — the mockup has a switch for side-by-side comparison.</p>
+
+    <h2 style="margin:22px 0 8px;font-size:13pt;font-weight:700;border-bottom:1px solid #B9C5CB;padding-bottom:4px">9 · Deliverables and acceptance</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:9pt">
+      <tbody>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;width:34%;font-family:var(--font-mono)">Voltline Cluster (offline).html</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">The live mockup as one self-contained file — open it in any browser next to the IDE. Controls: 5/7 in, Auto/Night/Day, Motion full/lite, Live data, Fault, Charging. Swipe or ← → to change tiles.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">icons/iso-*.svg</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Telltale and status glyphs, 24×24 viewBox, single colour — convert to 1-bit alpha C arrays and recolour at runtime.</td></tr>
+        <tr><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0;font-family:var(--font-mono)">This spec</td><td style="padding:5px 8px;border-bottom:1px solid #D3DCE0">Normative geometry, colour, type, widget map, data contract, thresholds, motion.</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:12px 0 4px;font-size:10pt;font-weight:700">Acceptance checklist</p>
+    <ol style="margin:0;padding-left:20px;font-size:9.5pt">
+      <li>Rail, content and status bands measure 44 / 360 / 44 px inside an 8 px safe area on both panels.</li>
+      <li>No element moves between tiles: clock, telltales, pack V, motor, controller, dots and status word stay pixel-identical.</li>
+      <li>Every readout renders its full range without wrapping or clipping — verify 199 km/h, 100 %, 999 999 km odo, 112 °C motor, 96 °C controller, 14.0 kW with a fault active.</li>
+      <li>Day and night themes swap values only; no widget moves, no signal colour changes.</li>
+      <li>Turn blink is a hard 800 ms step; unlit telltales sit at 18 % opacity and are never hidden.</li>
+      <li>Plugging in forces the Charging tile; unplugging returns to Ride.</li>
+      <li>A stale signal shows <span style="font-family:var(--font-mono)">—</span>, never a frozen value.</li>
+      <li>Sustained ≥ 30 fps while riding with Motion full; otherwise ship Lite.</li>
+    </ol>
+    <p style="margin:14px 0 0;font-size:9pt;color:#5E7079">Open item before homologation: the telltale glyphs here are drawn to ISO/ECE conventions but are not certified artwork. Replace them with licensed ISO 7000 / ECE symbols in the production build.</p>
+  </div>
+</doc-page>
+
+</x-dc>
+</body>
+</html>

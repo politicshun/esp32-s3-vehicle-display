@@ -59,3 +59,40 @@ CONFIG_LV_FONT_MONTSERRAT_48=y
 #     같이 원복함.) ---
 CONFIG_LV_DISP_DEF_REFR_PERIOD=20
 CONFIG_LV_INDEV_DEF_READ_PERIOD=20
+
+# --- LVGL 내부 오브젝트 메모리 풀: 기본 32KB로는 Voltline 5탭 UI(위젯 수가 이전
+#     4탭/단일페이지보다 훨씬 많음)를 다 못 담는다 — 2026-09-03 실기기 디버깅으로
+#     확정: task watchdog(IDLE1 미응답, lv_obj_create 안에서 영구 정지)의 정체는
+#     LVGL 내부 힙 고갈이었다. `LV_USE_ASSERT_MALLOC=y`라 malloc 실패 시 LVGL이
+#     크래시/로그 없이 `while(1)`(디스어셈블리로 `j .` 자기자신 무한점프 직접 확인)로
+#     조용히 멈춘다 — watchdog 로그의 백트레이스가 매번 완전히 똑같았던 이유.
+#
+#     **미해결 — 다음 세션 첫 판단 사항.** 시도한 완화책과 실기기 실측 결과 전부
+#     project_2026-09-02_voltline_5tile_ui_rewrite.md 메모리에 상세 기록:
+#     (1) lvgl_ui 태스크 스택을 PSRAM으로 이전(main.c) — 안전, 유지 중.
+#     (2) 이 값(LV_MEM_SIZE_KILOBYTES)을 32->40KB로 증설 — largest_free_block 여유
+#     1024 bytes로 드로우 버퍼(76800B)는 겨우 들어가지만, 5탭 다는 못 담아서 Setup
+#     탭 lv_slider_create()에서 LoadProhibited 크래시+재부팅 루프(다른 형태의 같은
+#     OOM). 48/96KB는 largest_free_block이 불균형하게 더 크게 깎여서(예: 16KB
+#     늘렸는데 18KB+ 깎임) 드로우 버퍼 자체가 할당 실패.
+#     (3) LV_MEM_CUSTOM으로 LVGL 힙 전체를 PSRAM 이전 — hang/크래시는 사라지지만
+#     프레임당 200ms(예산 20ms의 10배, 2026-08-05 PSRAM 렌더 버그 재현) — 출하 불가.
+#     지금은 (2)의 40KB로 둔 상태(hang은 없지만 Setup 탭에서 크래시 루프 — 미해결
+#     방치). 다음 세션에서 위젯 개수 감축 / 드로우 버퍼 축소(테어링 트레이드오프) /
+#     PSRAM 힙+렌더 최적화 중 하나를 사용자와 정하고 진행할 것. ---
+#
+# 2026-09-03(2차): 사용자 결정 — 드로우 버퍼 축소(main/lvgl.c LVGL_DRAW_BUF_LINES
+# 48->40, 76800B->64000B)로 largest_free_block 여유를 만들고, 그 여유를 여기에 씀.
+# 48KB 실기기 검증: largest_free_block=69632B(예측 정확히 일치) > 64000B라 드로우
+# 버퍼 할당은 성공. 하지만 5탭 위젯 생성은 전부 통과하고 그다음 푸터
+# (ui_chrome_build_footer)에서 LVGL 자체 힙 고갈로 크래시 — 마지막 조각만 부족.
+#
+# 2026-09-03(3차): 48->52KB(+4KB)로 재시도, largest_free_block=65536B(요청 64000B,
+# 여유 1536B)로 크래시는 해결됐으나 여유가 너무 취약 + 실기기에서 테어링 재발 리포트.
+#
+# 2026-09-03(4차) 근본 해결: Trip 탭 제거(main/ui/ui.c, ui_chrome.h 참고, 5탭 중
+# 위젯 밀도 최다 탭)로 LVGL 힙 사용량 자체를 줄이고, 드로우 버퍼도 48라인(76800B)
+# 으로 복귀(main/lvgl.c). 40KB는 이미 largest_free_block=77824B(76800B 요구량 대비
+# 여유 1024B)로 실측된 값이라 드로우 버퍼 할당은 될 것으로 예상 — Trip 탭이 빠진
+# 만큼 LVGL 자체 힙(40KB) 안에서 4탭이 다 지어지는지가 이번 실기기 검증 포인트.
+CONFIG_LV_MEM_SIZE_KILOBYTES=40

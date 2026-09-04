@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/colors.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/typography.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/spacing.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/shape.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/motion.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/tokens/base.css">
+<link rel="stylesheet" href="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/styles.css">
+<script src="_ds/voltline-cluster-design-system-1222934c-8b09-4983-8d82-a95df447dd32/_ds_bundle.js"></script>
+<style>
+  body { margin:0; background:var(--ink-1000); }
+  a { color:var(--current-500); text-decoration:none; }
+  a:hover { color:var(--current-400); }
+  @keyframes voltline-blink { 50% { opacity:.18; } }
+</style>
+</helmet>
+
+<template id="__bundler_thumbnail">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#06090C"/><rect x="18" y="34" width="84" height="52" rx="7" fill="none" stroke="#00E5D0" stroke-width="2.5"/><text x="60" y="70" font-family="Helvetica,Arial,sans-serif" font-size="26" font-weight="700" fill="#EEF3F5" text-anchor="middle">72</text></svg>
+</template>
+
+<div style="min-height:100vh;background:var(--ink-1000);padding:32px 32px 56px;display:flex;flex-direction:column;align-items:center;gap:20px;font-family:var(--font-core)">
+
+  <div style="width:100%;max-width:1180px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap">
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <span style="font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--text-tertiary);font-weight:700">Voltline</span>
+      <span style="font-size:24px;font-weight:600;color:var(--text-primary);letter-spacing:-0.01em">E-motorcycle cluster — 800×480, swipe navigation</span>
+      <span style="font-size:13px;color:var(--text-secondary)">Rectilinear instrument layout, 8 px safe area, no tab bar: screens change by horizontal swipe. Drag the screen, scroll sideways, or use ← →.</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.SegmentedControl" options="{{ presetOptions }}" value="{{ preset }}" on-change="{{ setPreset }}" size="sm" hint-size="150px,36px"></x-import>
+      <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.SegmentedControl" options="{{ themeOptions }}" value="{{ themeMode }}" on-change="{{ setThemeMode }}" size="sm" hint-size="190px,36px"></x-import>
+      <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.SegmentedControl" options="{{ motionOptions }}" value="{{ motion }}" on-change="{{ setMotion }}" size="sm" hint-size="180px,36px"></x-import>
+      <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Button" tone="{{ simTone }}" size="sm" onClick="{{ toggleSim }}" hint-size="110px,36px">Live data</x-import>
+      <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Button" tone="{{ faultTone }}" size="sm" onClick="{{ toggleFault }}" hint-size="110px,36px">Fault</x-import>
+      <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Button" tone="{{ chargeTone }}" size="sm" onClick="{{ toggleCharging }}" hint-size="140px,36px">Charging</x-import>
+    </div>
+  </div>
+
+  <div style="width:100%;overflow-x:auto;padding:2px 0">
+    <div style="width:max-content;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:10px">
+      <div style="padding:{{ bezelPad }}px;border-radius:26px;background:var(--ink-900);border:1px solid var(--ink-700);box-shadow:0 24px 80px rgba(0,0,0,.6)">
+        <div data-theme="{{ theme }}" data-screen-label="{{ view }}" onPointerDown="{{ onDown }}" onPointerUp="{{ onUp }}" onWheel="{{ onWheel }}" onKeyDown="{{ onKey }}" tabindex="0" style="width:800px;height:480px;--type-readout-1:64px;--type-readout-2:46px;--type-readout-3:32px;--dur-base:{{ durBase }};--dur-slow:{{ durSlow }};--dur-fast:80ms;--dur-motion:{{ durMotion }};--hit-min:{{ hitMin }}px;--hit-gloved:{{ hitGloved }}px;overflow:hidden;border-radius:12px;background:var(--bg-void);padding:8px;display:flex;flex-direction:column;gap:8px;font-family:var(--font-core);color:var(--text-primary);outline:none;touch-action:none;cursor:grab">
+
+          <div style="flex:0 0 auto;height:44px;display:flex;align-items:center;gap:20px;padding:0 6px;border-bottom:1px solid var(--line-hairline)">
+            <span style="font-family:var(--font-mono);font-size:21px;font-weight:500;font-variant-numeric:tabular-nums">{{ clock }}</span>
+            <span style="width:1px;height:20px;background:var(--line-hairline)"></span>
+            <span style="font-family:var(--font-readout);font-size:21px;color:var(--text-primary);font-variant-numeric:tabular-nums">{{ airTemp }}<span style="font-size:13px;color:var(--text-tertiary)">°C</span></span>
+            <span style="width:1px;height:20px;background:var(--line-hairline)"></span>
+            <span title="Phone link" style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;color:var(--current-500);opacity:{{ lampBle.o }};filter:{{ lampBle.f }};transition:opacity var(--dur-fast,80ms) linear"><span style="width:22px;height:22px;flex:0 0 auto;background:currentColor;-webkit-mask:url(icons/iso-bluetooth.svg) center/contain no-repeat;mask:url(icons/iso-bluetooth.svg) center/contain no-repeat"></span></span>
+            <span style="flex:1"></span>
+            <div style="display:flex;align-items:center;gap:26px;margin-right:24px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;color:var(--signal-go);opacity:{{ lampTurnL.o }};filter:{{ lampTurnL.f }};animation:{{ lampTurnL.a }};transition:opacity var(--dur-fast,80ms) linear">
+                <span style="width:26px;height:26px;background:currentColor;transform:scaleX(-1);-webkit-mask:url(icons/iso-turn.svg) center/contain no-repeat;mask:url(icons/iso-turn.svg) center/contain no-repeat"></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;color:var(--signal-beam);opacity:{{ lampBeam.o }};filter:{{ lampBeam.f }};animation:{{ lampBeam.a }};transition:opacity var(--dur-fast,80ms) linear">
+                <span style="width:26px;height:26px;background:currentColor;-webkit-mask:url(icons/iso-highbeam.svg) center/contain no-repeat;mask:url(icons/iso-highbeam.svg) center/contain no-repeat"></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;color:var(--signal-caution);opacity:{{ lampAbs.o }};filter:{{ lampAbs.f }};animation:{{ lampAbs.a }};transition:opacity var(--dur-fast,80ms) linear">
+                <span style="width:26px;height:26px;background:currentColor;-webkit-mask:url(icons/iso-brake.svg) center/contain no-repeat;mask:url(icons/iso-brake.svg) center/contain no-repeat"></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;color:var(--signal-critical);opacity:{{ lampMil.o }};filter:{{ lampMil.f }};animation:{{ lampMil.a }};transition:opacity var(--dur-fast,80ms) linear">
+                <span style="width:26px;height:26px;background:currentColor;-webkit-mask:url(icons/iso-ev-warning.svg) center/contain no-repeat;mask:url(icons/iso-ev-warning.svg) center/contain no-repeat"></span>
+              </span>
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;color:var(--signal-go);opacity:{{ lampTurnR.o }};filter:{{ lampTurnR.f }};animation:{{ lampTurnR.a }};transition:opacity var(--dur-fast,80ms) linear">
+                <span style="width:26px;height:26px;background:currentColor;-webkit-mask:url(icons/iso-turn.svg) center/contain no-repeat;mask:url(icons/iso-turn.svg) center/contain no-repeat"></span>
+              </span>
+            </div>
+          </div>
+
+          <sc-if value="{{ isRide }}" hint-placeholder-val="{{ true }}">
+            <div style="flex:1 1 auto;min-height:0;display:grid;grid-template-columns:172px 1fr 172px;grid-template-rows:42px 1fr;column-gap:16px;padding:0 4px 6px">
+
+              <div style="grid-column:2;grid-row:1;display:flex;align-items:center;justify-content:center">
+                <div onClick="{{ cycleMode }}" style="display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 22px;border:1.5px solid var(--line-accent);border-radius:var(--radius-pill);color:var(--text-accent);font-size:15px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;cursor:pointer">{{ modeLabel }}</div>
+              </div>
+
+              <div style="grid-column:1;grid-row:2;background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:16px 14px;display:flex;flex-direction:column;justify-content:space-evenly;gap:2px">
+                <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Battery</span>
+                <span style="display:flex;align-items:baseline;gap:4px;white-space:nowrap;font-family:var(--font-readout);font-size:60px;line-height:.9;font-weight:600;color:{{ socColor }};font-variant-numeric:tabular-nums">{{ soc }}<span style="font-size:22px;color:var(--text-tertiary)">%</span></span>
+                <div style="display:flex;align-items:center;gap:2px;margin-top:2px">
+                  <div style="flex:1;display:flex;align-items:center;gap:3px;height:22px;padding:3px;border:1px solid var(--line-default);border-radius:3px">
+                    <sc-for list="{{ battBars }}" as="seg" hint-placeholder-count="10">
+                      <span style="flex:1;height:100%;border-radius:1px;background:{{ seg.c }};transition:background var(--dur-motion,250ms) linear"></span>
+                    </sc-for>
+                  </div>
+                  <span style="width:3px;height:10px;border-radius:0 2px 2px 0;background:var(--line-default)"></span>
+                </div>
+                <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Range</span>
+                <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">{{ range }}<span style="font-size:18px;color:var(--text-tertiary)">{{ distUnit }}</span></span>
+              </div>
+
+              <div style="grid-column:2;grid-row:2;display:flex;flex-direction:column;justify-content:space-between;min-height:0">
+                <div style="flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;gap:10px;white-space:nowrap">
+                  <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:300px;height:118px;border-radius:50%;background:radial-gradient(ellipse,rgba(0,229,208,.16),transparent 70%);opacity:{{ glow }};transition:opacity var(--dur-motion,250ms) linear;pointer-events:none"></span>
+                  <span style="font-family: var(--font-readout); font-size: {{ speedFont }}; line-height: .82; font-weight: 600; letter-spacing: -0.03em; color: {{ speedColor }}; font-variant-numeric: tabular-nums; transition: color var(--dur-base,260ms) linear; font-style: italic; text-align: center">{{ speedInt }}</span>
+                  <span style="align-self:flex-end;padding-bottom:30px;font-size:21px;color:var(--text-secondary)">{{ speedUnit }}</span>
+                </div>
+                <div>
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+                    <span style="display:flex;align-items:baseline;gap:8px"><span style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:{{ regenLabelColor }}">Regen</span><span style="font-family:var(--font-readout);font-size:17px;font-weight:600;color:var(--energy-regen);font-variant-numeric:tabular-nums">{{ regenValue }}</span></span>
+                    <span style="display:flex;align-items:baseline;gap:8px"><span style="font-family:var(--font-readout);font-size:17px;font-weight:600;color:var(--signal-caution);font-variant-numeric:tabular-nums">{{ powerValue }}</span><span style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:{{ powerLabelColor }}">Power</span></span>
+                  </div>
+                  <div style="display:flex;align-items:stretch;gap:2px;height:18px">
+                    <sc-for list="{{ flowCells }}" as="cell" hint-placeholder-count="41">
+                      <span style="flex:{{ cell.f }};border-radius:1px;background:{{ cell.c }};transition:background var(--dur-motion,250ms) linear"></span>
+                    </sc-for>
+                  </div>
+                  <div style="position:relative;height:16px;margin-top:1px">
+                    <span style="position:absolute;left:50%;top:0;transform:translateX(-50%);font-family:var(--font-readout);font-size:13px;line-height:16px;color:var(--text-tertiary)">0</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style="grid-column:3;grid-row:2;background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:16px 14px;display:flex;flex-direction:column;justify-content:space-evenly;gap:2px">
+                <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Trip A</span>
+                <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">{{ tripDist }}<span style="font-size:18px;color:var(--text-tertiary)">{{ distUnit }}</span></span>
+                <div style="height:1px;background:var(--line-hairline)"></div>
+                <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Odo</span>
+                <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:34px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">{{ odo }}<span style="font-size:16px;color:var(--text-tertiary)">{{ distUnit }}</span></span>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isCharge }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 260px;gap:10px">
+              <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:16px 20px;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:10px">
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Badge" tone="go" hint-size="auto,24px">Charging</x-import>
+                <span style="display:flex;align-items:baseline;gap:8px;font-family:var(--font-readout);font-size:120px;line-height:.86;font-weight:600;font-variant-numeric:tabular-nums">{{ soc }}<span style="font-size:24px;color:var(--text-tertiary)">%</span></span>
+                <div style="display:flex;align-items:center;gap:3px;height:22px;width:100%;padding:3px;border:1px solid var(--line-default);border-radius:4px">
+                  <sc-for list="{{ battBars }}" as="seg" hint-placeholder-count="10">
+                    <span style="flex:1;height:100%;border-radius:1px;background:{{ seg.c }}"></span>
+                  </sc-for>
+                </div>
+                <span style="font-size:15px;color:var(--text-secondary)">{{ chargeEta }} to 100% · 2.1 kW · {{ range }} {{ distUnit }} when full</span>
+              </div>
+              <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:14px">
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.TripStat" label="Pack" value="{{ packV }}" unit="V" size="md" hint-size="100%,44px"></x-import>
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.TripStat" label="Cell temp" value="34" unit="°C" size="sm" hint-size="100%,38px"></x-import>
+                <span style="font-size:11px;color:var(--text-tertiary);line-height:1.5">Firmware 2.8.1 installs before unplugging.</span>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isTrip }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:10px;padding:0 4px 6px">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:0 2px">
+                <span style="font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--text-accent);font-weight:600">Trip A</span>
+                <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">since 09:14 · 0:41</span>
+              </div>
+              <div style="flex:1 1 auto;min-height:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1fr;gap:10px">
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Distance</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">{{ tripDist }}<span style="font-size:18px;color:var(--text-tertiary)">{{ distUnit }}</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Avg speed</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">27<span style="font-size:18px;color:var(--text-tertiary)">{{ speedUnit }}</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Max speed</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">74<span style="font-size:18px;color:var(--text-tertiary)">{{ speedUnit }}</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Energy</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">9.2<span style="font-size:18px;color:var(--text-tertiary)">Wh/km</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Regen</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;color:var(--text-accent);font-variant-numeric:tabular-nums">0.42<span style="font-size:18px;color:var(--text-tertiary)">kWh</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Ride time</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">0:41<span style="font-size:18px;color:var(--text-tertiary)">h</span></span>
+                </div>
+              </div>
+              <div style="flex:0 0 auto;height:64px;display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:stretch">
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Odo</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:34px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">{{ odo }}<span style="font-size:14px;color:var(--text-tertiary)">{{ distUnit }}</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Range</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:34px;line-height:.9;font-weight:600;color:var(--text-accent);font-variant-numeric:tabular-nums">{{ range }}<span style="font-size:14px;color:var(--text-tertiary)">{{ distUnit }}</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:0 14px;display:flex;align-items:center;justify-content:space-between;gap:10px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Battery</span>
+                  <span style="display:flex;align-items:baseline;gap:4px;white-space:nowrap;font-family:var(--font-readout);font-size:34px;line-height:.9;font-weight:600;color:{{ socColor }};font-variant-numeric:tabular-nums">{{ soc }}<span style="font-size:14px;color:var(--text-tertiary)">%</span></span>
+                </div>
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Button" tone="secondary" size="lg" onClick="{{ resetTrip }}" hint-size="160px,64px">Reset trip</x-import>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isDtc }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:10px;padding:0 4px 6px">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:0 2px">
+                <span style="font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal-critical);font-weight:600">Faults · 2 active</span>
+                <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-tertiary)">VIN VLN2E4•••••8117 · FW 2.8.1</span>
+              </div>
+              <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:8px">
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.AlertBanner" tone="critical" title="Motor over temperature" detail="Power limited to 60%. Pull over when safe." code="E-412" hint-size="100%,58px"></x-import>
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.AlertBanner" tone="caution" title="Rear brake sensor intermittent" detail="Book service within 300 km." code="C-118" hint-size="100%,58px"></x-import>
+              </div>
+              <div style="flex:0 0 auto;height:126px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Motor</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;color:{{ motorColor }};font-variant-numeric:tabular-nums">{{ motorTemp }}<span style="font-size:18px;color:var(--text-tertiary)">°C</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Controller</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">{{ ctrlTemp }}<span style="font-size:18px;color:var(--text-tertiary)">°C</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Pack</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">34<span style="font-size:18px;color:var(--text-tertiary)">°C</span></span>
+                </div>
+                <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:14px;display:flex;flex-direction:column;justify-content:center;gap:8px">
+                  <span style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Cell delta</span>
+                  <span style="display:flex;align-items:baseline;gap:6px;white-space:nowrap;font-family:var(--font-readout);font-size:46px;line-height:.9;font-weight:600;font-variant-numeric:tabular-nums">0.03<span style="font-size:18px;color:var(--text-tertiary)">V</span></span>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isSetup }}" hint-placeholder-val="{{ false }}">
+            <div style="flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:10px">
+              <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+                <span style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Display</span>
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.SegmentedControl" options="{{ unitOptions }}" value="{{ units }}" on-change="{{ setUnits }}" size="sm" block="{{ true }}" hint-size="100%,36px"></x-import>
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Slider" value="{{ brightness }}" min="{{ brMin }}" max="{{ brMax }}" step="{{ brStep }}" on-change="{{ setBrightness }}" label="Brightness" unit="%" hint-size="100%,52px"></x-import>
+              </div>
+              <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+                <span style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Vehicle</span>
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Switch" checked="{{ autoLight }}" on-change="{{ setAutoLight }}" label="Auto headlight" hint-size="100%,44px"></x-import>
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Slider" value="{{ regen }}" min="{{ zero }}" max="{{ regenMax }}" step="{{ one }}" on-change="{{ setRegen }}" label="Regen level" hint-size="100%,52px"></x-import>
+              </div>
+              <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                  <span style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Phone (BLE)</span>
+                  <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Badge" tone="{{ bleTone }}" hint-size="auto,24px">{{ bleLabel }}</x-import>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:15px">Rider's iPhone</span>
+                  <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary)">{{ bleDetail }}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:auto">
+                  <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Button" tone="secondary" size="md" onClick="{{ toggleBle }}" hint-size="140px,44px">{{ bleAction }}</x-import>
+                  <span style="font-family:var(--font-mono);font-size:13px;letter-spacing:.1em;color:var(--text-accent)">418 902</span>
+                </div>
+              </div>
+              <div style="background:var(--surface-panel);border:1px solid var(--line-hairline);border-radius:var(--radius-tile);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+                <span style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">System</span>
+                <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Switch" checked="{{ autoTheme }}" on-change="{{ setAutoTheme }}" label="Auto day/night" description="Follows the ambient light sensor." hint-size="100%,44px"></x-import>
+                <span style="margin-top:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary)">FW 2.8.1 · VLN-8117 · ESP32-S3</span>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="flex:0 0 auto;height:44px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;padding:0 6px;border-top:1px solid var(--line-hairline);white-space:nowrap">
+            <div style="display:flex;align-items:center;gap:14px">
+            <span style="display:flex;flex:0 0 auto;align-items:center;gap:8px;color:var(--text-secondary)">
+              <span style="width:22px;height:22px;flex:0 0 auto;background:currentColor;-webkit-mask:url(icons/iso-battery.svg) center/contain no-repeat;mask:url(icons/iso-battery.svg) center/contain no-repeat"></span>
+              <span style="font-family:var(--font-readout);font-size:22px;font-weight:600;color:var(--text-primary);font-variant-numeric:tabular-nums">{{ packV }}<span style="font-size:13px;color:var(--text-tertiary)"> V</span></span>
+            </span>
+            <span style="width:1px;height:24px;background:var(--line-hairline)"></span>
+            <span style="display:flex;flex:0 0 auto;align-items:center;gap:8px;color:var(--text-secondary)">
+              <span style="width:22px;height:22px;flex:0 0 auto;background:currentColor;-webkit-mask:url(icons/iso-temp.svg) center/contain no-repeat;mask:url(icons/iso-temp.svg) center/contain no-repeat"></span>
+              <span style="display:flex;flex-direction:column;line-height:1.05">
+                <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)">Motor</span>
+                <span style="font-family:var(--font-readout);font-size:20px;font-weight:600;color:{{ motorColor }};font-variant-numeric:tabular-nums">{{ motorTemp }}<span style="font-size:12px;color:var(--text-tertiary)">°C</span></span>
+              </span>
+            </span>
+            <span style="width:1px;height:24px;background:var(--line-hairline)"></span>
+            <span style="display:flex;flex:0 0 auto;align-items:center;gap:8px;color:var(--text-secondary)">
+              <span style="width:22px;height:22px;flex:0 0 auto;background:currentColor;-webkit-mask:url(icons/iso-controller.svg) center/contain no-repeat;mask:url(icons/iso-controller.svg) center/contain no-repeat"></span>
+              <span style="display:flex;flex-direction:column;line-height:1.05">
+                <span style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)">Ctrl</span>
+                <span style="font-family:var(--font-readout);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums">{{ ctrlTemp }}<span style="font-size:12px;color:var(--text-tertiary)">°C</span></span>
+              </span>
+            </span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:center;min-width:0">
+            <sc-if value="{{ anyAlert }}" hint-placeholder-val="{{ false }}">
+              <span style="display:flex;flex:0 0 auto;align-items:center;gap:12px">
+                <sc-if value="{{ tempWarn }}" hint-placeholder-val="{{ false }}">
+                  <span style="display:flex;flex:0 0 auto;align-items:center;gap:8px;color:var(--signal-caution)">
+                    <span style="width:22px;height:22px;flex:0 0 auto;background:currentColor;-webkit-mask:url(icons/iso-warning-tri.svg) center/contain no-repeat;mask:url(icons/iso-warning-tri.svg) center/contain no-repeat"></span>
+                    <sc-if value="{{ tempTextOnly }}" hint-placeholder-val="{{ false }}"><span style="font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Temp check</span></sc-if>
+                  </span>
+                </sc-if>
+                <sc-if value="{{ fault }}" hint-placeholder-val="{{ false }}">
+                  <span onClick="{{ goDtc }}" style="display:inline-flex;align-items:center;height:26px;padding:0 10px;border:1px solid var(--signal-critical);border-radius:4px;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--signal-critical);cursor:pointer">DTC 01</span>
+                </sc-if>
+              </span>
+            </sc-if>
+            </div>
+            <div style="display:flex;align-items:center;gap:14px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span onClick="{{ goRide }}" style="width:8px;height:8px;border-radius:50%;background:{{ dotC0 }};cursor:pointer;transition:background var(--dur-fast,80ms) linear"></span>
+              <span onClick="{{ goTrip }}" style="width:8px;height:8px;border-radius:50%;background:{{ dotC1 }};cursor:pointer;transition:background var(--dur-fast,80ms) linear"></span>
+              <span onClick="{{ goDtc }}" style="width:8px;height:8px;border-radius:50%;background:{{ dotC2 }};cursor:pointer;transition:background var(--dur-fast,80ms) linear"></span>
+              <span onClick="{{ goSetup }}" style="width:8px;height:8px;border-radius:50%;background:{{ dotC3 }};cursor:pointer;transition:background var(--dur-fast,80ms) linear"></span>
+            </div>
+            <span style="width:1px;height:24px;background:var(--line-hairline)"></span>
+            <span style="flex:0 0 auto;font-size:17px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:{{ statusColor }};padding-right:6px">{{ statusLabel }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-tertiary)">{{ presetNote }}</span>
+    </div>
+  </div>
+
+  <sc-if value="{{ showLvglMap }}" hint-placeholder-val="{{ true }}">
+    <div style="width:100%;max-width:1180px">
+      <x-import component-from-global-scope="VoltlineClusterDesignSystem_122293.Panel" title="LVGL widget map" meta="v9 core · touch only" hint-size="100%,320px">
+        <div style="display:grid;grid-template-columns:1.05fr 1fr 1.7fr;gap:0;font-size:13px">
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-default);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)">Element</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-default);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)">LVGL object</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-default);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary)">Note</div>
+
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline)">Screen paging</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);font-family:var(--font-mono);color:var(--current-400)">lv_tileview</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);color:var(--text-secondary)">4 tiles in one row, LV_DIR_HOR. Swipe only — no tab bar. Charging is a 5th tile forced on plug-in.</div>
+
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline)">Page dots</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);font-family:var(--font-mono);color:var(--current-400)">4 × lv_obj</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);color:var(--text-secondary)">Recolored on the tileview value-changed event; the only navigation feedback on screen.</div>
+
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline)">Speed numeral</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);font-family:var(--font-mono);color:var(--current-400)">lv_label</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);color:var(--text-secondary)">One 150 px digits-only font (0-9 + km/h), ~40 KB flash. Redraw only when the integer changes.</div>
+
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline)">Regen / power strip</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);font-family:var(--font-mono);color:var(--current-400)">40 × lv_obj</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);color:var(--text-secondary)">Discrete cells around a fixed zero: regen green to the left, power cyan to the right. Recolor only the cells that change.</div>
+
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline)">Battery cells</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);font-family:var(--font-mono);color:var(--current-400)">10 × lv_obj</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);color:var(--text-secondary)">Inside a 1 px bordered shell, like a physical fuel gauge. Off state uses the day/night track colour.</div>
+
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline)">Telltale rail</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);font-family:var(--font-mono);color:var(--current-400)">lv_image + recolor</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);color:var(--text-secondary)">1-bit alpha glyphs, off = 18% opacity, never hidden. Turn blink: lv_timer 800 ms, steps(1).</div>
+
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline)">Status row</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);font-family:var(--font-mono);color:var(--current-400)">lv_flex row</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);color:var(--text-secondary)">Persistent across all tiles: pack V, motor, controller, temp check, DTC count, READY. Never moves.</div>
+
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline)">Motion budget</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);font-family:var(--font-mono);color:var(--current-400)">lv_anim</div>
+          <div style="padding:8px 10px;border-bottom:1px solid var(--line-hairline);color:var(--text-secondary)">Full: 250 ms cell recolor, speed glow fade, 300 ms tile slide. Lite: values snap, glow off, tiles cut. One build flag.</div>
+
+          <div style="padding:8px 10px">Safe area</div>
+          <div style="padding:8px 10px;font-family:var(--font-mono);color:var(--current-400)">8 px padding</div>
+          <div style="padding:8px 10px;color:var(--text-secondary)">All around, per the reference guide — nothing critical inside the bezel radius. Hit targets 56 px on 5", 48 px on 7".</div>
+        </div>
+      </x-import>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1260,&quot;height&quot;:1120},&quot;preset&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;5&quot;,&quot;7&quot;],&quot;default&quot;:&quot;5&quot;,&quot;tsType&quot;:&quot;'5'|'7'&quot;,&quot;section&quot;:&quot;Demo&quot;},&quot;themeMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;auto&quot;,&quot;night&quot;,&quot;day&quot;],&quot;default&quot;:&quot;auto&quot;,&quot;tsType&quot;:&quot;'auto'|'night'|'day'&quot;,&quot;section&quot;:&quot;Demo&quot;},&quot;units&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;metric&quot;,&quot;imperial&quot;],&quot;default&quot;:&quot;metric&quot;,&quot;tsType&quot;:&quot;'metric'|'imperial'&quot;,&quot;section&quot;:&quot;Demo&quot;},&quot;motion&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;full&quot;,&quot;lite&quot;],&quot;default&quot;:&quot;full&quot;,&quot;tsType&quot;:&quot;'full'|'lite'&quot;,&quot;section&quot;:&quot;Demo&quot;},&quot;fault&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Demo&quot;},&quot;charging&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Demo&quot;},&quot;showLvglMap&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Demo&quot;}}">
+const VIEWS = ['ride', 'trip', 'dtc', 'setup'];
+
+// Telltale lamp state: off is dimmed to 18%, never hidden. Blink is the legal 800ms hard step.
+function lampState(active, rgb, blink) {
+  return {
+    o: active ? '1' : '0.18',
+    f: active ? 'drop-shadow(0 0 10px rgba(' + rgb + ',.85))' : 'none',
+    a: active && blink ? 'voltline-blink var(--pulse-turn) steps(1,end) infinite' : 'none',
+  };
+}
+
+class Component extends DCLogic {
+  state = {
+    view: 'ride', preset: '5', themeMode: 'auto', units: 'metric',
+    mode: 'city', speed: 72, watts: 12000, soc: 78, tripKm: 48.6, motorTemp: 54, ctrlTemp: 48,
+    sim: true, fault: false, charging: false, ble: true, brightness: 70, regen: 2,
+    autoTheme: true, autoLight: true, blinker: 'off', t: 0, motion: 'full',
+  };
+
+  componentDidMount() {
+    const p = this.props, seed = {};
+    ['preset', 'themeMode', 'units', 'fault', 'charging', 'motion'].forEach((k) => { if (p[k] !== undefined) seed[k] = p[k]; });
+    if (Object.keys(seed).length) this.setState(seed);
+    this.timer = setInterval(() => {
+      this.setState((s) => {
+        const t = s.t + 1;
+        const next = { t, blinker: t % 48 < 12 ? 'right' : 'off' };
+        if (s.charging) {
+          next.soc = Math.min(100, s.soc + 0.04);
+          next.speed = 0; next.watts = 0;
+          return next;
+        }
+        if (s.sim) {
+          const target = 46 + 30 * Math.sin(t / 44) + 8 * Math.sin(t / 10);
+          const sp = Math.max(0, s.speed + (target - s.speed) * 0.14);
+          const accel = (sp - s.speed) * 2;
+          next.speed = sp;
+          next.watts = Math.round(Math.max(-3000, Math.min(14000, accel * 3200 + sp * 92 - (accel < -0.2 ? 3400 : 0))));
+          next.soc = Math.max(4, s.soc - 0.006);
+          next.tripKm = s.tripKm + sp / 3600 * 0.25;
+          next.motorTemp = Math.round(Math.max(44, Math.min(112, s.motorTemp + (next.watts > 9000 ? 0.14 : -0.08))));
+          next.ctrlTemp = Math.round(Math.max(38, Math.min(96, s.ctrlTemp + (next.watts > 9000 ? 0.1 : -0.06))));
+        }
+        return next;
+      });
+    }, 250);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  set = (k) => (v) => this.setState({ [k]: v });
+  goRide = () => this.setState({ view: 'ride' });
+  goTrip = () => this.setState({ view: 'trip' });
+  goDtc = () => this.setState({ view: 'dtc' });
+  goSetup = () => this.setState({ view: 'setup' });
+
+  page(dir) {
+    this.setState((s) => {
+      if (s.charging) return {};
+      const i = VIEWS.indexOf(s.view);
+      return { view: VIEWS[Math.max(0, Math.min(VIEWS.length - 1, i + dir))] };
+    });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const metric = s.units === 'metric';
+    const fault = s.fault;
+    const soc = Math.round(s.soc);
+    const rangeKm = Math.round(soc * 1.62 * (fault ? 0.82 : 1));
+    const now = new Date();
+    const hour = now.getHours();
+    const theme = s.themeMode === 'auto' ? (hour >= 7 && hour < 19 ? 'day' : 'night') : s.themeMode;
+    const five = s.preset === '5';
+    const full = s.motion === 'full';
+    const view = s.charging ? 'charge' : s.view;
+    const toMi = (v) => v * 0.6214;
+    const shown = metric ? s.speed : toMi(s.speed);
+    const tempWarn = s.motorTemp > 95 || fault;
+
+    const CELLS = 40, ZERO = 20;
+    const kw = s.watts / 1000;
+    const regenCells = Math.round(Math.min(1, Math.max(0, -kw) / 3) * ZERO);
+    const powerCells = Math.round(Math.min(1, Math.max(0, kw) / 14) * (CELLS - ZERO));
+    const flowCells = [];
+    for (let i = 0; i < ZERO; i++) {
+      const from = ZERO - i;
+      flowCells.push({ f: 1, c: from <= regenCells ? 'var(--energy-regen)' : 'var(--track-empty)' });
+    }
+    flowCells.push({ f: 0.5, c: 'var(--text-primary)' });
+    for (let i = 1; i <= CELLS - ZERO; i++) {
+      flowCells.push({ f: 1, c: i <= powerCells ? 'var(--signal-caution)' : 'var(--track-empty)' });
+    }
+
+    const battFill = Math.round((soc / 100) * 10);
+    const socColor = soc > 30 ? 'var(--text-primary)' : soc > 12 ? 'var(--signal-caution)' : 'var(--signal-critical)';
+    const battBars = Array.from({ length: 10 }, (_, i) => ({
+      c: i < battFill
+        ? (s.charging ? 'var(--energy-regen)' : soc > 55 ? 'var(--energy-full)' : soc > 30 ? 'var(--energy-mid)' : soc > 12 ? 'var(--energy-low)' : 'var(--energy-empty)')
+        : 'var(--track-empty)',
+    }));
+
+    const dotC = (v) => (v === view ? 'var(--current-500)' : 'var(--line-strong)');
+
+    return {
+      theme, view, preset: s.preset, units: s.units, mode: s.mode, ble: s.ble,
+      isRide: view === 'ride', isTrip: view === 'trip', isDtc: view === 'dtc',
+      isSetup: view === 'setup', isCharge: view === 'charge',
+      hitMin: five ? 48 : 44, hitGloved: five ? 56 : 48,
+      bezelPad: five ? 16 : 26, lampSize: five ? 22 : 20, statIcon: 20,
+      presetNote: five
+        ? '5.0 in · 800×480 · 188 ppi · 8 px safe area ≈ 1.1 mm · min target 56 px ≈ 7.6 mm'
+        : '7.0 in · 800×480 · 133 ppi · 8 px safe area ≈ 1.5 mm · min target 48 px ≈ 9.2 mm',
+      presetOptions: [{ value: '5', label: '5 in' }, { value: '7', label: '7 in' }],
+      themeOptions: [{ value: 'auto', label: 'Auto' }, { value: 'night', label: 'Night' }, { value: 'day', label: 'Day' }],
+      motionOptions: [{ value: 'full', label: 'Motion full' }, { value: 'lite', label: 'Motion lite' }],
+      unitOptions: [{ value: 'metric', label: 'km/h · km' }, { value: 'imperial', label: 'mph · mi' }],
+      motion: s.motion, themeMode: s.themeMode,
+      speedInt: Math.round(shown),
+      speedFont: Math.round(shown) >= 100 ? '190px' : '250px',
+      anyAlert: tempWarn || fault, tempTextOnly: tempWarn && !fault,
+      speedUnit: metric ? 'km/h' : 'mph',
+      distUnit: metric ? 'km' : 'mi',
+      speedColor: fault ? 'var(--signal-caution)' : 'var(--text-primary)',
+      glow: full ? (0.1 + 0.9 * Math.min(1, shown / (metric ? 120 : 75))).toFixed(2) : '0',
+      flowCells, battBars, socColor,
+      dotC0: dotC('ride'), dotC1: dotC('trip'), dotC2: dotC('dtc'), dotC3: dotC('setup'),
+      goRide: this.goRide, goTrip: this.goTrip, goDtc: this.goDtc, goSetup: this.goSetup,
+      regenValue: kw < 0 ? Math.abs(kw).toFixed(1) + ' kW' : '',
+      powerValue: kw >= 0 ? kw.toFixed(1) + ' kW' : '',
+      regenLabelColor: kw < 0 ? 'var(--energy-regen)' : 'var(--text-tertiary)',
+      powerLabelColor: kw > 0 ? 'var(--signal-caution)' : 'var(--text-tertiary)',
+      soc, range: metric ? rangeKm : Math.round(toMi(rangeKm)),
+      tripDist: (metric ? s.tripKm : toMi(s.tripKm)).toFixed(1),
+      odo: metric ? '12\u2009840' : '7\u2009979',
+      packV: (88.4 + soc * 0.102).toFixed(1),
+      motorTemp: s.motorTemp, ctrlTemp: s.ctrlTemp,
+      motorColor: s.motorTemp > 95 ? 'var(--signal-caution)' : 'var(--text-primary)',
+      tempTone: s.motorTemp > 95 ? 'accent' : undefined,
+      tempWarn, battWarn: soc < 12, fault,
+      absActive: fault,
+      lampTurnL: lampState(s.blinker === 'left', '62,210,107', true),
+      lampTurnR: lampState(s.blinker === 'right', '62,210,107', true),
+      lampBeam: lampState(theme === 'night', '59,130,246'),
+      lampAbs: lampState(fault, '255,176,32'),
+      lampBle: lampState(s.ble, '0,229,208'),
+      lampMil: lampState(fault, '255,68,56'),
+      turnLeft: s.blinker === 'left', turnRight: s.blinker === 'right',
+      highBeam: theme === 'night',
+      statusLabel: s.charging ? 'Charging' : fault ? 'Limited' : 'Ready',
+      statusColor: fault ? 'var(--signal-caution)' : 'var(--signal-go)',
+      clock: String(hour).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0'),
+      airTemp: 18,
+      chargeEta: soc >= 99 ? 'Ready' : Math.floor((100 - soc) * 1.6 / 60) + ':' + String(Math.round((100 - soc) * 1.6 % 60)).padStart(2, '0'),
+      modeLabel: { eco: 'Eco', city: 'City', sport: 'Sport' }[s.mode],
+      cycleMode: () => this.setState((x) => ({ mode: { eco: 'city', city: 'sport', sport: 'eco' }[x.mode] })),
+      bleTone: s.ble ? 'accent' : 'neutral',
+      bleLabel: s.ble ? 'Linked' : 'Off',
+      bleDetail: s.ble ? 'Connected · −54 dBm' : 'Not connected · pairing open 60 s',
+      bleAction: s.ble ? 'Disconnect' : 'Pair',
+      brightness: s.brightness, regen: s.regen,
+      autoTheme: s.autoTheme, autoLight: s.autoLight,
+      brMin: 10, brMax: 100, brStep: 5, zero: 0, one: 1, regenMax: 3,
+      showLvglMap: this.props.showLvglMap ?? true,
+      simTone: s.sim ? 'primary' : 'secondary',
+      faultTone: fault ? 'critical' : 'secondary',
+      chargeTone: s.charging ? 'primary' : 'secondary',
+      durBase: full ? '260ms' : '0ms',
+      durSlow: full ? '400ms' : '0ms',
+      durMotion: full ? '250ms' : '0ms',
+      setPreset: this.set('preset'), setThemeMode: this.set('themeMode'), setUnits: this.set('units'),
+      setMotion: this.set('motion'), setBrightness: this.set('brightness'), setRegen: this.set('regen'),
+      setAutoTheme: this.set('autoTheme'), setAutoLight: this.set('autoLight'),
+      onDown: (e) => { this.dragX = e.clientX; },
+      onUp: (e) => {
+        if (this.dragX == null) return;
+        const dx = e.clientX - this.dragX;
+        this.dragX = null;
+        if (Math.abs(dx) > 40) this.page(dx < 0 ? 1 : -1);
+      },
+      onWheel: (e) => {
+        if (Math.abs(e.deltaX) < 12) return;
+        const nowT = Date.now();
+        if (this.lastWheel && nowT - this.lastWheel < 420) return;
+        this.lastWheel = nowT;
+        this.page(e.deltaX > 0 ? 1 : -1);
+      },
+      onKey: (e) => {
+        if (e.key === 'ArrowRight') this.page(1);
+        if (e.key === 'ArrowLeft') this.page(-1);
+      },
+      toggleSim: () => this.setState((x) => ({ sim: !x.sim })),
+      toggleFault: () => this.setState((x) => ({ fault: !x.fault })),
+      toggleCharging: () => this.setState((x) => ({ charging: !x.charging })),
+      toggleBle: () => this.setState((x) => ({ ble: !x.ble })),
+      resetTrip: () => this.setState({ tripKm: 0 }),
+      true: true, false: false,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -35,6 +35,23 @@ static void *s_psram_fb0 = NULL;
 static void *s_psram_fb1 = NULL;
 static lv_color_t *s_sram_draw_buf = NULL;
 static bool s_using_psram_draw_buf = false;
+/* 2026-09-04: 탭 전환 시 화면 전체가 알아보기 힘들 정도로 찢어진다는 리포트 조사 중 발견 —
+ * lv_disp_draw_buf_init()은 호출될 때마다 buf_act를 무조건 buf1로 되돌린다
+ * (managed_components/lvgl__lvgl/src/hal/lv_hal_disp.c:156, LVGL 소스 확인). 그런데
+ * lvgl_request_tearfree_page_switch()가 매번 (s_psram_fb0, s_psram_fb1) 두 개를 인자로
+ * 새로 lv_disp_draw_buf_init()을 불렀었다 — 그래서 LVGL은 항상 buf1=s_psram_fb0에만
+ * 그렸고, esp_lcd_rgb_panel의 cur_fb_index도 (esp_lcd_panel_rgb.c 확인) 항상 fbs[0]에서
+ * 안 움직였다. 즉 "예비 버퍼에 그리고 원자적으로 스왑"이 아니라 **지금 화면에 실제로
+ * 스캔아웃되고 있는 바로 그 버퍼에 직접 소프트웨어 렌더링**을 하고 있었던 것 —
+ * 값 하나 바뀔 때 CPU memcpy 한 번(수십us, 밴드 카피)과 달리 탭 전체를 LVGL이 새로
+ * 소프트웨어 래스터라이즈하는 건 여러 ms가 걸려 화면 스캔 여러 사이클에 걸쳐 겹쳐써서
+ * 훨씬 심하고 오래가는 테어링을 만든다. 8차 수정(불필요한 재대입 제거) 전에는 매 20ms
+ * 프레임마다 이 손상된 버퍼를 다시 덮어썼기 때문에 우연히 "자체 치유"돼 눈에 덜 띄었을
+ * 뿐, 8차 이후 갱신 빈도가 줄면서 이 문제가 그대로 화면에 고정되어 드러난 것으로 보임.
+ * 진짜 더블버퍼링: 항상 "지금 안 보이는 쪽" PSRAM 버퍼를 우리가 직접 골라서 그 하나만
+ * lv_disp_draw_buf_init()에 buf1로 넘기고(buf2=NULL), 스왑이 끝나면 다음번엔 반대쪽을
+ * 쓰도록 토글한다. */
+static int s_psram_live_fb = 0; /* 0=s_psram_fb0가 방금 라이브가 됨(다음엔 fb1에 그린다), 1=반대 */
 
 /* DIAGNOSTIC(2026-08-05, 임시): handler_us(lv_timer_handler 전체) 중 실제 픽셀 밀어넣기
  * (esp_lcd_panel_draw_bitmap, "zero-copy 스왑"이라던 그 호출)가 차지하는 비중만 따로 재서,
@@ -64,7 +81,11 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
  * 반영이 끝나 있어 프레임 카운터 없이 "한 번 쓰고 바로 복귀"가 안전하다. */
 void lvgl_request_tearfree_page_switch(void) {
     if (s_psram_fb0 && s_psram_fb1 && !s_using_psram_draw_buf) {
-        lv_disp_draw_buf_init(&s_draw_buf, s_psram_fb0, s_psram_fb1, LCD_H_RES * LCD_V_RES);
+        /* s_psram_live_fb는 "마지막으로 이 함수가 스왑해서 라이브가 된 버퍼"를 가리킨다
+         * (esp_lcd_panel_rgb.c의 cur_fb_index와 우리가 직접 맞춰 추적) — 그 반대쪽 버퍼는
+         * 지금 화면에 안 보이므로 안전하게 새로 그릴 수 있다. */
+        void *back_buf = (s_psram_live_fb == 0) ? s_psram_fb1 : s_psram_fb0;
+        lv_disp_draw_buf_init(&s_draw_buf, back_buf, NULL, LCD_H_RES * LCD_V_RES);
         s_using_psram_draw_buf = true;
     }
 }
@@ -252,7 +273,30 @@ void lvgl_ui_task(void *pvParameters) {
      * 해결(스왑 기반 무테어링)은 아니지만, largest_free_block 안에서 최대한 버퍼를
      * 키우면 밴드 수가 줄어(12->10) 한 번의 전체 화면 갱신이 더 빨리 끝나 테어링이
      * 노출되는 시간이 짧아진다 — 48라인(76800 bytes, largest_free_block=83968 대비
-     * 여유 7168 bytes)으로 시험, 양산 가능한 수준인지 실기기로 확인 중. */
+     * 여유 7168 bytes)으로 올려서 양산 검증 중이었음(2026-08-06).
+     *
+     * 2026-09-03: Voltline 5탭 재작성 후 내부 SRAM이 훨씬 더 빠듯해져서 48라인을
+     * 유지한 채로는 LV_MEM_SIZE_KILOBYTES를 키울 여유가 없어, 임시로 40라인(64000B)
+     * 으로 낮추고 그 여유를 LV_MEM_SIZE 증설에 썼음 — 크래시는 잡혔지만 실기기에서
+     * 테어링이 다시 눈에 띈다는 사용자 리포트로 트레이드오프가 확인됨(예상대로).
+     *
+     * 2026-09-03(2차): 근본 해결로 Trip 탭(5탭 중 위젯 밀도 최다) 자체를 제거해
+     * 4탭으로 축소(ui_chrome.h UI_CHROME_TILE_COUNT 참고) — 위젯 수가 줄어든 만큼
+     * 48라인을 되찾을 여유가 생겼을 것으로 예상, 48라인으로 복귀. LV_MEM_SIZE_KILOBYTES
+     * 값도 이 변경에 맞춰 실기기로 재측정 필요(sdkconfig 참고).
+     *
+     * 2026-09-03(3차) 실기기 실측(4탭, 48라인/10밴드): handler_avg가 부팅 후에도
+     * ~180000us(180ms, 예산 20ms의 9배)에서 전혀 안 떨어지고 유지됨 — 터치 탭이 안
+     * 먹히는 증상까지 유발(폴링 주기가 180ms라 짧은 탭이 통째로 묻힘). 원인 분리 진단으로
+     * LVGL_DRAW_BUF_LINES를 일부러 16(30밴드)으로 낮춰 재측정: handler_avg 180ms->296ms로
+     * 증가, flush 총량은 그대로(~50ms)인데 비-flush(스타일계산+래스터화) 시간만 증가 —
+     * "작은 SRAM 버퍼 + full_refresh=1"이 밴드 수만큼 위젯 트리를 반복 순회/재드로우하는
+     * 구조라는 가설이 실측으로 확인됨(단, 완전 선형은 아니라서 밴드-무관 고정비용도 큼 —
+     * 48라인/10밴드에서도 이미 130ms). 근본 원인은 Voltline UI 자체의 위젯/폰트 복잡도가
+     * 예전 게이지 UI보다 훨씬 커서 매 20ms 풀스크린 리드로우 비용이 폭증한 것으로 추정 —
+     * direct_mode 재도전은 금지(2회 실패 이력, [[project_2026-08-06_page-transition-tearing-fix]]).
+     * 다음 조사 방향: CAN 시뮬레이터가 "모든 값을 항상 동시에" 바꾸는 게 매 틱 풀리프레시를
+     * 강제하는 트리거인지(값 변경 빈도를 낮춰서 재현되는지) 확인부터. */
     ESP_LOGI(TAG, "내부 SRAM 상태: free=%u, largest_block=%u (요청 %u bytes)",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
@@ -328,6 +372,7 @@ void lvgl_ui_task(void *pvParameters) {
         if (s_using_psram_draw_buf) {
             lv_disp_draw_buf_init(&s_draw_buf, s_sram_draw_buf, NULL, LCD_H_RES * LVGL_DRAW_BUF_LINES);
             s_using_psram_draw_buf = false;
+            s_psram_live_fb = 1 - s_psram_live_fb; /* 방금 그린 반대쪽(back_buf)이 이제 라이브 */
         }
 
         int64_t handler_us = handler_end_us - handler_start_us;

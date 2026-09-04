@@ -1,0 +1,36 @@
+:root{
+  --font-core:"Archivo","Helvetica Neue",Arial,sans-serif;        /* labels, UI, prose */
+  --font-readout:"Barlow Semi Condensed","Archivo",sans-serif;    /* numerals at glance size */
+  --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,monospace; /* diagnostics, codes, VIN */
+
+  /* Readouts — glanceable numerals. Always tabular. */
+  --type-speed-xl:180px;
+  --type-speed:132px;
+  --type-readout-1:76px;
+  --type-readout-2:52px;
+  --type-readout-3:38px;
+
+  /* UI text */
+  --type-title:24px;
+  --type-body-lg:18px;
+  --type-body:15px;
+  --type-label:13px;
+  --type-caption:11px;
+  --type-micro:10px;
+
+  --weight-regular:400;
+  --weight-medium:500;
+  --weight-semibold:600;
+  --weight-bold:700;
+
+  --leading-readout:0.86;
+  --leading-tight:1.15;
+  --leading-body:1.5;
+
+  --tracking-readout:-0.02em;
+  --tracking-normal:0em;
+  --tracking-label:0.08em;   /* uppercase unit + field labels */
+  --tracking-micro:0.14em;
+
+  --numeric-tabular:tabular-nums lining-nums; /* @kind other */
+}

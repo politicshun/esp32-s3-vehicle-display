@@ -1,0 +1,96 @@
+:root{
+  /* ── Ink ramp: the cockpit night scale ─────────────────────────── */
+  --ink-1000:#040608;
+  --ink-950:#06090C;
+  --ink-900:#0A0E12;
+  --ink-850:#0E1419;
+  --ink-800:#131A21;
+  --ink-700:#1B242C;
+  --ink-600:#26323C;
+  --ink-500:#38474F;   
+  --ink-400:#586B76;
+  --ink-300:#7F9099;
+  --ink-200:#AAB8C0;
+  --ink-100:#D6DFE4;
+  --ink-050:#EEF3F5;
+  --ink-000:#FFFFFF;
+
+  /* ── Brand: Voltline current ───────────────────────────────────── */
+  --current-700:#00544C;
+  --current-600:#00857A;
+  --current-500:#00E5D0;
+  --current-400:#4FF0E0;
+  --current-300:#9DF8EE;
+
+  /* ── Signal colors. Fixed by automotive convention — do not retint ── */
+  --signal-go:#3ED26B;        /* turn indicators, ready-to-ride, regen */
+  --signal-go-dim:#1C5E33;
+  --signal-beam:#3B82F6;      /* high beam only */
+  --signal-beam-dim:#1B3C73;
+  --signal-caution:#FFB020;   /* degraded / attention */
+  --signal-caution-dim:#6B4A0D;
+  --signal-critical:#FF4438;  /* stop riding / fault */
+  --signal-critical-dim:#6E1A15;
+
+  /* ── Energy ramp: battery + power flow ─────────────────────────── */
+  --energy-full:#3ED26B;
+  --energy-mid:#C8E44A;
+  --energy-low:#FFB020;
+  --energy-empty:#FF4438;
+  --energy-regen:#00E5D0;
+
+  /* ── Semantic aliases: use these in components ─────────────────── */
+  --bg-void:var(--ink-950);
+  --surface-base:var(--ink-900);
+  --surface-panel:var(--ink-850);
+  --surface-raised:var(--ink-800);
+  --surface-sunken:var(--ink-950);
+  --surface-inverse:var(--ink-050);
+  --surface-accent:var(--current-700);
+
+  --text-primary:var(--ink-050);
+  --text-secondary:var(--ink-300);
+  --text-tertiary:var(--ink-400);
+  --text-disabled:var(--ink-500);
+  --text-accent:var(--current-500);
+  --text-inverse:var(--ink-950);
+  --text-critical:var(--signal-critical);
+
+  --line-hairline:var(--ink-700);
+  --line-default:var(--ink-600);
+  --line-strong:var(--ink-500);
+  --line-accent:var(--current-600);
+
+  --track-empty:var(--ink-700);
+  --track-fill:var(--current-500);
+
+  --focus-ring:var(--current-400);
+  --scrim:rgba(4,7,10,.72);
+}
+
+/* Day scope: direct-sunlight legibility. Applied to a root container, never mixed mid-screen. */
+[data-theme="day"]{
+  --bg-void:#E7ECEF;
+  --surface-base:#F3F6F7;
+  --surface-panel:#FFFFFF;
+  --surface-raised:#FFFFFF;
+  --surface-sunken:#DFE6E9;
+  --surface-inverse:var(--ink-900);
+  --surface-accent:var(--current-300);
+
+  --text-primary:#0A0E12;
+  --text-secondary:#40525C;
+  --text-tertiary:#5E7079;
+  --text-disabled:#9AA8B0;
+  --text-accent:#00776C;
+  --text-inverse:#FFFFFF;
+
+  --line-hairline:#D3DCE0;
+  --line-default:#B9C5CB;
+  --line-strong:#8A9AA3;
+  --line-accent:#00857A;
+
+  --track-empty:#CBD5D9;
+  --track-fill:#00857A;
+  --scrim:rgba(20,28,33,.55);
+}

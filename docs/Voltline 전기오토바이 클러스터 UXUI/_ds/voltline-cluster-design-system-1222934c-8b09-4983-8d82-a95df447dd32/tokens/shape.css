@@ -1,0 +1,25 @@
+:root{
+  --radius-none:0px;
+  --radius-chip:6px;
+  --radius-control:10px;
+  --radius-tile:14px;
+  --radius-panel:20px;
+  --radius-screen:28px;
+  --radius-pill:999px;
+
+  --border-hairline:1px;
+  --border-default:1px;
+  --border-emphasis:2px;
+  --ring-focus:2px;
+
+  /* Elevation is light, not drop-shadow: cockpit surfaces glow, they don't float. */
+  --shadow-none:none;
+  --shadow-tile:inset 0 1px 0 rgba(255,255,255,.04);
+  --shadow-panel:0 1px 0 rgba(255,255,255,.05) inset, 0 8px 24px rgba(0,0,0,.45);
+  --shadow-modal:0 24px 64px rgba(0,0,0,.65);
+  --glow-accent:0 0 24px rgba(0,229,208,.28);
+  --glow-critical:0 0 24px rgba(255,68,56,.35);
+  --glow-caution:0 0 20px rgba(255,176,32,.30);
+
+  --blur-scrim:12px;
+}
