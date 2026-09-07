@@ -3,6 +3,7 @@ idf_component_register(
         "main.c"
         "init.c"
         "vehicle_data.c"
+        "cluster_settings.c"
         "twai.c"
         "ble.c"
         "lvgl.c"

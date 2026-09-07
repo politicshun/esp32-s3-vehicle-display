@@ -17,13 +17,15 @@
  * 없음 — 다른 타일과 동일하게 도트/탭존으로 도달 가능한 일반 5번째 타일(계획 §7-4).
  *
  * 데이터 갭(HARNESS-TODO, 지어내지 않음): 충전 중 여부 자체를 모르므로 스펙의
- * "Charging" go-배지는 안 띄운다(중립 캡션 "BATTERY STATUS"로 대체). 완충예상
- * 시간/충전전력(2.1kW)/"완충 시 range"/펌웨어 설치 안내는 전부 대응 신호가 없어
- * "-"/"—" 고정. 실데이터인 SOC/셀바/PACK V/PACK 온도(sys_temp_c)만 직결.
+ * "Charging" go-배지는 안 띄운다(중립 캡션 "BATTERY STATUS"로 대체). "완충 시 range"
+ * 예측/펌웨어 설치 안내는 대응 신호가 없어 "-"/"—" 고정. 완충예상시간/충전전력은
+ * 2026-09-04 cluster.dbc InvMsg3로 신호가 생겨서(통상 범위 플레이스홀더,
+ * docs/design/can-signals.md 참고) 배선했다.
  */
 
 static lv_obj_t *s_lbl_soc_val;
 static lv_obj_t *s_cellbar_soc;
+static lv_obj_t *s_lbl_charge_note; /* "<time> to 100% · <power> kW · range now" 한 오브젝트 */
 static lv_obj_t *s_lbl_range_val;
 static lv_obj_t *s_lbl_packv_val;
 static lv_obj_t *s_lbl_packtemp_val;
@@ -83,8 +85,17 @@ lv_obj_t *ui_tile_charging_build(lv_obj_t *tile_parent)
     s_cellbar_soc = ui_widget_cellbar_create(bar_row, UI_SOC_CELL_COUNT);
     lv_obj_set_flex_grow(s_cellbar_soc, 1);
 
-    /* HARNESS-TODO: 확인필요 — 완충예상시간/충전전력 CAN 신호 없음. RANGE만 실측
-     * d.range_km 직결(스펙의 "완충 시 range" 예측이 아니라 "현재 range"). */
+    /* RANGE는 d.range_km 직결(스펙의 "완충 시 range" 예측이 아니라 "현재 range").
+     * time_to_full/charge_power는 2026-09-04 InvMsg3 배선(통상 범위 플레이스홀더).
+     *
+     * 2026-09-04(2차): 원래 이 자리를 5개 라벨 오브젝트(값 2개 + 구분 텍스트 2개 +
+     * range)로 쪼갰었는데, 그게 실기기에서 LVGL 내부 힙(LV_MEM_SIZE=40KB, 여유
+     * 1024B뿐 — 2026-09-03 SRAM 위기 때와 동일한 빠듯한 예산)을 넘겨 lv_mem_buf_get()
+     * 안에서 조용히 멈추는(LV_USE_ASSERT_MALLOC=y가 OOM을 assert로 처리, 그 핸들러가
+     * while(1) 스핀 — task watchdog이 5초마다 반복 트리거되는 것으로 확인) 증상을
+     * 재현시켰다. 새 오브젝트를 추가하지 않고 원래 있던 2개짜리 구조(정적 안내문 +
+     * range 강조값)를 그대로 재사용해서, time_to_full/charge_power는 안내문 문자열
+     * 안에 같이 포맷팅한다(강조색은 range만 유지, 값이 늘었다고 위젯을 늘리지 않는다). */
     lv_obj_t *note_row = lv_obj_create(left);
     lv_obj_remove_style_all(note_row);
     lv_obj_set_size(note_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
@@ -93,10 +104,10 @@ lv_obj_t *ui_tile_charging_build(lv_obj_t *tile_parent)
     lv_obj_set_style_pad_column(note_row, 6, 0);
     lv_obj_clear_flag(note_row, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *note_lbl = lv_label_create(note_row);
-    lv_obj_add_style(note_lbl, &ui_style_text_secondary, 0);
-    lv_obj_set_style_text_font(note_lbl, &lv_font_montserrat_14, 0);
-    lv_label_set_text(note_lbl, "\xE2\x80\x94 to 100% \xC2\xB7 \xE2\x80\x94 kW \xC2\xB7 range now");
+    s_lbl_charge_note = lv_label_create(note_row);
+    lv_obj_add_style(s_lbl_charge_note, &ui_style_text_secondary, 0);
+    lv_obj_set_style_text_font(s_lbl_charge_note, &lv_font_montserrat_14, 0);
+    lv_label_set_text(s_lbl_charge_note, "\xE2\x80\x94 to 100% \xC2\xB7 \xE2\x80\x94 kW \xC2\xB7 range now");
 
     s_lbl_range_val = lv_label_create(note_row);
     lv_obj_add_style(s_lbl_range_val, &ui_style_text_primary, 0);
@@ -160,6 +171,21 @@ void ui_tile_charging_update(void)
         range_prev = (unsigned)d.range_km;
         snprintf(buf, sizeof(buf), "%u km", (unsigned)d.range_km);
         lv_label_set_text(s_lbl_range_val, buf);
+    }
+
+    /* time_to_full/charge_power를 별도 오브젝트로 안 쪼개고 안내문 하나에 같이
+     * 포맷팅한다(위 build 함수 주석 참고 — LVGL 내부 힙 예산 때문에 위젯을 안 늘림). */
+    static unsigned time_to_full_prev = UINT32_MAX;
+    static int charge_power_dv_prev = INT32_MIN;
+    unsigned time_to_full_now = (unsigned)d.time_to_full_min;
+    int charge_power_dv = (int)lroundf(d.charge_power_kw * 10.0f);
+    if (time_to_full_now != time_to_full_prev || charge_power_dv != charge_power_dv_prev) {
+        time_to_full_prev = time_to_full_now;
+        charge_power_dv_prev = charge_power_dv;
+        char note_buf[48];
+        snprintf(note_buf, sizeof(note_buf), "%u min to 100%% \xC2\xB7 %.1f kW \xC2\xB7 range now",
+                 time_to_full_now, (double)d.charge_power_kw);
+        lv_label_set_text(s_lbl_charge_note, note_buf);
     }
 
     static int packv_dv_prev = INT32_MIN;

@@ -2,6 +2,7 @@
 #include "ui_style.h"
 #include "ui_fonts_label.h"
 #include "vehicle_data.h"
+#include "cluster_settings.h"
 #include <stdio.h>
 
 /*
@@ -9,14 +10,14 @@
  * 스펙: Voltline Cluster.dc.html isSetup 블록(약 237~269행) — 2x2 카드
  *       (Display/Vehicle/Phone·BLE/System).
  *
- * **이번 phase 범위 밖(HARNESS-TODO, 배선 없음)**: 밝기 슬라이더는 백라이트
- * PWM 드라이버가 없고(pin_config.h에 백라이트 핀 자체가 없음), 회생레벨/자동
- * 상향등/자동 주야간은 대응 CAN TX 신호나 센서가 없다(twai.c에 이런 설정값을
- * 내보내는 메시지가 없음). 단위(km/h<->mph) 전환도 Ride/Trip 탭에 아직
- * 전파되지 않는다(그쪽은 km 하드코딩). 그래서 이 탭의 슬라이더/스위치/버튼매트릭스는
- * **로컬 UI 상태만 가진 인터랙션 데모**다 — 재부팅하면 초기값으로 돌아가고, 조작해도
- * 차량/화면에 실제 영향이 없다. 실제 배선은 별도 세션에서 백라이트 핀·설정
- * 퍼시스턴스(NVS)·CAN TX 설정 메시지가 정해진 뒤에.
+ * 2026-09-04: 5개 값(밝기/회생레벨/자동상향등/자동주야간/단위)을 `cluster_settings.h`
+ * 경유로 `ClusterSettings`(0x500, CLUSTER->INVERTER, docs/hardware/cluster.dbc,
+ * 통상 범위 플레이스홀더)에 실어 CAN으로 내보내는 배선까지는 됐다. **그래도 여전히
+ * 로컬 UI 데모다** — 밝기는 백라이트 PWM 드라이버가 없고(pin_config.h에 백라이트 핀
+ * 자체가 없음), 설정값은 NVS에 저장 안 해서 재부팅하면 초기값으로 돌아가고, 단위
+ * 전환도 Ride 탭에 아직 전파되지 않는다(그쪽은 km 하드코딩). 인버터가 이 CAN
+ * 메시지를 받아서 뭘 하는지도 인버터측 구현 영역이라 여기선 모른다 — "화면 조작 ->
+ * CAN으로 나감"까지만 확인됐고, "그게 실제 차량에 반영됨"은 아직 아니다.
  *
  * 유일하게 실데이터인 것: Phone(BLE) 카드의 연결 배지(d.ble_connected 직결).
  * "Rider's iPhone"/페어링코드 "418 902"(스펙 데모값)는 지어내지 않는다 —
@@ -63,23 +64,65 @@ static lv_obj_t *build_labeled_row(lv_obj_t *parent, const char *text)
     return row;
 }
 
-/* 슬라이더 값 라벨을 "라벨 N%" 형태로 실시간 갱신(로컬 UI 상태 데모, 배선 없음) */
+/* 슬라이더 값 라벨을 "라벨 N%" 형태로 실시간 갱신 + cluster_settings에 반영해서
+ * ClusterSettings(0x500)로 나가게 한다(여전히 로컬 UI 데모, 위 파일 상단 주석 참고). */
 static void slider_pct_cb(lv_event_t *e)
 {
     lv_obj_t *slider = lv_event_get_target(e);
     lv_obj_t *val_lbl = (lv_obj_t *)lv_event_get_user_data(e);
+    int val = (int)lv_slider_get_value(slider);
     char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", (int)lv_slider_get_value(slider));
+    snprintf(buf, sizeof(buf), "%d%%", val);
     lv_label_set_text(val_lbl, buf);
+
+    ClusterSettings_t cs;
+    cluster_settings_get(&cs);
+    cs.brightness_pct = (uint8_t)val;
+    cluster_settings_set(&cs);
 }
 
 static void slider_level_cb(lv_event_t *e)
 {
     lv_obj_t *slider = lv_event_get_target(e);
     lv_obj_t *val_lbl = (lv_obj_t *)lv_event_get_user_data(e);
+    int val = (int)lv_slider_get_value(slider);
     char buf[16];
-    snprintf(buf, sizeof(buf), "LEVEL %d", (int)lv_slider_get_value(slider));
+    snprintf(buf, sizeof(buf), "LEVEL %d", val);
     lv_label_set_text(val_lbl, buf);
+
+    ClusterSettings_t cs;
+    cluster_settings_get(&cs);
+    cs.regen_level = (uint8_t)val;
+    cluster_settings_set(&cs);
+}
+
+/* 단위 버튼매트릭스/스위치 3개는 라벨 갱신이 따로 없어 cluster_settings 반영만 한다. */
+static void units_btnmatrix_cb(lv_event_t *e)
+{
+    lv_obj_t *btnm = lv_event_get_target(e);
+    uint16_t checked = lv_btnmatrix_get_selected_btn(btnm);
+    ClusterSettings_t cs;
+    cluster_settings_get(&cs);
+    cs.units_mph = (checked == 1); /* index 0=KM/H·KM, 1=MPH·MI(build_display_card 참고) */
+    cluster_settings_set(&cs);
+}
+
+static void headlight_switch_cb(lv_event_t *e)
+{
+    lv_obj_t *sw = lv_event_get_target(e);
+    ClusterSettings_t cs;
+    cluster_settings_get(&cs);
+    cs.auto_headlight = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    cluster_settings_set(&cs);
+}
+
+static void daynight_switch_cb(lv_event_t *e)
+{
+    lv_obj_t *sw = lv_event_get_target(e);
+    ClusterSettings_t cs;
+    cluster_settings_get(&cs);
+    cs.auto_day_night = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    cluster_settings_set(&cs);
 }
 
 static lv_obj_t *build_display_card(lv_obj_t *parent)
@@ -92,6 +135,7 @@ static lv_obj_t *build_display_card(lv_obj_t *parent)
     lv_btnmatrix_set_map(units, unit_map);
     lv_btnmatrix_set_one_checked(units, true);
     lv_btnmatrix_set_btn_ctrl(units, 0, LV_BTNMATRIX_CTRL_CHECKED);
+    lv_obj_add_event_cb(units, units_btnmatrix_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t *br_row = build_labeled_row(card, "Brightness");
     lv_obj_t *br_val = lv_label_create(br_row);
@@ -116,6 +160,7 @@ static lv_obj_t *build_vehicle_card(lv_obj_t *parent)
     lv_obj_t *hl_row = build_labeled_row(card, "Auto headlight");
     lv_obj_t *hl_sw = lv_switch_create(hl_row);
     lv_obj_set_style_bg_color(hl_sw, UI_ACCENT, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_add_event_cb(hl_sw, headlight_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     lv_obj_t *rg_row = build_labeled_row(card, "Regen level");
     lv_obj_t *rg_val = lv_label_create(rg_row);
@@ -187,6 +232,7 @@ static lv_obj_t *build_system_card(lv_obj_t *parent)
     lv_obj_t *dn_row = build_labeled_row(card, "Auto day/night");
     lv_obj_t *dn_sw = lv_switch_create(dn_row);
     lv_obj_set_style_bg_color(dn_sw, UI_ACCENT, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_add_event_cb(dn_sw, daynight_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     /* HARNESS-TODO: 확인필요 — FW 버전/시리얼 저장 소스 없음(grep 결과 없음).
      * "ESP32-S3"만 실제 타깃 칩(빌드 타깃) 그대로. */

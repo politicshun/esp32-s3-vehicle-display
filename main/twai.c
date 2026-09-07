@@ -1,5 +1,6 @@
 #include "driver/twai.h"
 #include "vehicle_data.h"
+#include "cluster_settings.h"
 #include "pin_config.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -17,14 +18,24 @@ static const char *TAG = "TWAI_TASK";
 // 2026-07-31 CAN 최적화 리비전: 신호를 서브시스템별이 아니라 갱신 우선도 기준으로
 // 재배치함 — InvMsg1=우선도 높음(운전 중 계속 바뀌거나 지연 시 안전 문제),
 // InvMsg2=우선도 낮음(서서히 바뀌는 상태값). docs/hardware/cluster.dbc CM_ 참고.
-#define CAN_ID_INV_MSG1 0x100  // InvMsg1(100ms): Speed/DriveMode/DTC/Power/RegenPower
-#define CAN_ID_INV_MSG2 0x200  // InvMsg2(200ms): SOC/DClinkVoltage/Temp/DriveRange/Odometer
+#define CAN_ID_INV_MSG1 0x100  // InvMsg1(100ms): Speed/DriveMode/DTC/Power/RegenPower/TurnSignal/Highbeam/BrakeAbsWarn/MotorTemp/ControllerTemp
+#define CAN_ID_INV_MSG2 0x200  // InvMsg2(200ms): SOC/DClinkVoltage/Temp/DriveRange/Odometer/CellDelta/AmbientTemp
+// 2026-09-04: 충전 관련 신호(통상 범위 플레이스홀더, docs/design/can-signals.md 참고) —
+// InvMsg1/2 남는 바이트로 부족해서 새 메시지로 뺐다. 충전 중에만 의미 있어 가장 느린 주기.
+#define CAN_ID_INV_MSG3 0x400  // InvMsg3(1000ms): ChargePower/TimeToFull
 
 // 2026-08-07: 클러스터 -> 인버터 방향 Alive. 이 저장소가 CAN 스펙을 먼저 정하고 인버터가
 // 맞추는 프로젝트라(docs/design/can-signals.md 머리말), ID/주기/페이로드는 사용자 결정으로
 // 확정한 값이다 — "실차 관례 추측"이 아님. 인버터측 구현/실기 검증은 아직 대기 중.
 #define CAN_ID_CLUSTER_ALIVE 0x300
 #define CLUSTER_ALIVE_PERIOD_MS 500
+
+// 2026-09-04: Setup 탭 설정값(밝기/회생레벨/자동상향등/자동주야간/단위) — CLUSTER->
+// INVERTER, 통상 범위 플레이스홀더(docs/hardware/cluster.dbc, docs/design/can-signals.md
+// 참고). ClusterAlive(헬스체크)와 성격이 달라 새 ID로 분리했고, 자주 안 바뀌는 값이라
+// twai_tx_task의 500ms 루프 중 2번에 1번(=1000ms)만 보낸다.
+#define CAN_ID_CLUSTER_SETTINGS 0x500
+#define CLUSTER_SETTINGS_PERIOD_TICKS 2  // CLUSTER_ALIVE_PERIOD_MS(500ms) 기준 2틱=1000ms
 
 // ClusterStatus(byte1) 비트 정의. cluster.dbc CM_ 및 docs/design/can-signals.md와 동기화할 것.
 #define ALIVE_ST_INVMSG1_OK (1 << 0)  // InvMsg1을 타임아웃 내에 받고 있음
@@ -74,29 +85,32 @@ static bool twai_start_with_retry(void) {
     // TODO: 실제 버스 속도 확인 필요 (500kbps 가정 중 - 250k/1M인 차량도 흔함)
     twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
 
-    // 2026-08-07: ACCEPT_ALL -> 하드웨어 어셉턴스 필터(dual filter mode).
-    // 이전에는 버스의 모든 프레임이 인터럽트/RX큐/태스크까지 올라온 뒤 switch의 default에서
-    // 소프트웨어로 버려졌다. 벤치(Kvaser 2개 ID)에서는 티가 안 나지만 실차 버스에 붙이면
-    // 관심 없는 프레임 때문에 RX큐(기본 5개)와 CPU를 그대로 낭비한다.
+    // 2026-08-07: ACCEPT_ALL -> 하드웨어 어셉턴스 필터. 원래 dual filter mode로
+    // 0x100/0x200 딱 두 개만 정확 매칭했는데, 2026-09-04에 InvMsg3(0x400)가 세 번째
+    // 수신 ID로 추가되면서 그 방식이 더 이상 안 통한다 — dual/single filter의 mask는
+    // "이 비트는 신경 안 씀(1)"만 표현 가능하고 "이 세 비트 중 정확히 하나만 켜짐" 같은
+    // 조건은 표현 못 한다(0x100/0x200/0x400은 11bit ID 중 8/9/10번 비트가 각각 하나씩만
+    // 켜진 값). 그래서 single filter mode로 바꿔서 ID 8~10번 비트를 통째로 don't-care
+    // 처리해 세 값을 전부 통과시키고, 그 대신 0x000/0x300(ClusterAlive와 겹침, 근데
+    // self-reception 안 함)/0x500/0x600/0x700도 같이 통과된다 — 이건 handle_rx_message()의
+    // switch default에서 소프트웨어로 버린다(원래 주석이 예고했던 절충).
     //
-    // ESP32-S3의 TWAI는 SJA1000 계열 어셉턴스 필터다. dual filter mode + 표준 프레임에서
-    // 32bit acceptance code/mask의 비트 배치는:
-    //   [31:21]=필터1 ID(11bit)  [20]=필터1 RTR  [19:16]=필터1 data[0] 상위 니블
-    //   [15:5] =필터2 ID(11bit)  [4] =필터2 RTR  [3:0] =필터2 data[0] 하위 니블
+    // ESP32-S3 TWAI(SJA1000 계열) single filter mode, 표준 프레임 32bit 배치:
+    //   [31:21]=ID(11bit) [20]=RTR [19:12]=data[0] [11:4]=data[1] [3:0]=미사용
     // mask는 1 = don't care.
-    //
-    //   code = (0x100 << 21) | (0x200 << 5) = 0x20000000 | 0x00004000 = 0x20004000
-    //   mask = (0xF << 16) | 0xF            = 0x000F000F   (data 니블만 무시, ID/RTR은 정확 일치)
-    //
-    // 결과: 표준 데이터 프레임 0x100과 0x200 **정확히 두 개만** 통과. RTR도 하드웨어에서 차단.
-    // 자기가 보낸 ClusterAlive(0x300)는 self-reception 요청을 안 하므로 필터와 무관하다.
-    // 수신 대상 ID를 추가/변경하면 위 계산을 다시 하고 이 주석도 같이 갱신할 것
-    // (ID가 3개 이상 필요해지면 dual filter로는 정확 매칭이 불가능하므로,
-    //  마스크를 넓혀 통과시키고 switch의 default에서 거르는 절충이 필요하다).
+    //   - ID bit8~10(0x100/0x200/0x400에 해당, word bit29~31) = don't care
+    //   - ID bit0~7(하위 바이트, word bit21~28) = 정확 일치(0) — 세 타깃 ID 전부 하위
+    //     바이트가 0x00이라 여기서 이미 대부분의 오검출(예: 시뮬레이터 decoy ID 0x101~0x180)을
+    //     걸러낸다.
+    //   - RTR(word bit20) = 정확 일치(0), 데이터 프레임만 통과
+    //   - data[0]/data[1](word bit4~19), 미사용(word bit0~3) = don't care
+    //   code = 0 (신경 쓰는 비트는 전부 0과 일치해야 함)
+    //   mask = (0x7 << 29) | (0xFFFF << 4) | 0xF = 0xE00FFFFF
+    // 수신 대상 ID가 또 바뀌면 위 계산을 다시 하고 이 주석도 같이 갱신할 것.
     twai_filter_config_t f_config = {
-        .acceptance_code = ((uint32_t)CAN_ID_INV_MSG1 << 21) | ((uint32_t)CAN_ID_INV_MSG2 << 5),
-        .acceptance_mask = (0xFU << 16) | 0xFU,
-        .single_filter = false,
+        .acceptance_code = 0x00000000U,
+        .acceptance_mask = 0xE00FFFFFU,
+        .single_filter = true,
     };
 
     esp_err_t err = twai_driver_install(&g_config, &t_config, &f_config);
@@ -138,19 +152,26 @@ static void handle_rx_message(const twai_message_t *rx_msg) {
     switch (rx_msg->identifier) {
         case CAN_ID_INV_MSG1:
             // cluster.dbc InvMsg1 (BU_ INVERTER->CLUSTER, DLC8, 100ms, 우선도 높음) 바이트 배치:
-            // byte0=Speed byte1=DriveMode byte2=DTC byte3=Power byte4=RegenPower byte5~7=(예약)
+            // byte0=Speed byte1=DriveMode byte2=DTC byte3=Power byte4=RegenPower
+            // byte5=TurnSignal(bit0-1)/Highbeam(bit2)/BrakeAbsWarn(bit3) byte6=MotorTemp byte7=ControllerTemp
             // 전부 raw unsigned(@1+), offset은 산술로만 적용(2의 보수 아님)
             current_data.speed = (int16_t)rx_msg->data[0] - 10;       // factor1, offset-10, [-10|245]
             current_data.drive_mode = rx_msg->data[1];                // VAL_: 0=P 1=R 2=N 3=D
             current_data.dtc_code = rx_msg->data[2];                  // [0|255], 단일 열거값
             current_data.power_kw = (float)rx_msg->data[3];           // factor1, [0|255]kW
             current_data.regen_kw = (float)rx_msg->data[4];           // factor1, [0|255]kW
-            // byte5~7: 예약(미사용)
+            // 2026-09-04 추가(통상 범위 플레이스홀더, docs/design/can-signals.md 참고)
+            current_data.turn_signal = rx_msg->data[5] & 0x03;        // bit0-1: 0=off 1=left 2=right 3=hazard
+            current_data.highbeam = (rx_msg->data[5] & 0x04) != 0;    // bit2
+            current_data.brake_abs_warn = (rx_msg->data[5] & 0x08) != 0; // bit3
+            current_data.motor_temp_c = (int16_t)rx_msg->data[6] - 20;      // factor1, offset-20, [-20|235]
+            current_data.controller_temp_c = (int16_t)rx_msg->data[7] - 20; // factor1, offset-20, [-20|235]
             s_last_rx_msg1_ms = now_ms();
             break;
         case CAN_ID_INV_MSG2: {
             // cluster.dbc InvMsg2 (BU_ INVERTER->CLUSTER, DLC8, 200ms, 우선도 낮음) 바이트 배치:
-            // byte0=SOC byte1=DClinkVoltage byte2=Temp byte3=DriveRange byte4~5=Odometer(16bit LE) byte6~7=(예약)
+            // byte0=SOC byte1=DClinkVoltage byte2=Temp byte3=DriveRange byte4~5=Odometer(16bit LE)
+            // byte6=CellDelta byte7=AmbientTemp
             current_data.soc = rx_msg->data[0];                       // [0|100]
             current_data.pack_volt = (float)rx_msg->data[1];          // DClinkVoltage, factor1, [0|80]
             current_data.sys_temp_c = (int16_t)rx_msg->data[2] - 20;  // factor1, offset-20, [-20|235]
@@ -159,10 +180,20 @@ static void handle_rx_message(const twai_message_t *rx_msg) {
             // raw 최대 65535 * 5 = 327,675km까지 커버 (실사용 상한 30만km 기준)
             uint16_t odo_raw = (uint16_t)(rx_msg->data[4] | (rx_msg->data[5] << 8));
             current_data.odo_km = (uint32_t)odo_raw * 5;              // factor5, [0|327675]km
-            // byte6~7: 예약(미사용)
+            // 2026-09-04 추가(통상 범위 플레이스홀더, docs/design/can-signals.md 참고)
+            current_data.cell_delta_mv = rx_msg->data[6];             // factor1, [0|255]mV
+            current_data.ambient_temp_c = (int16_t)rx_msg->data[7] - 40; // factor1, offset-40, [-40|215]
             s_last_rx_msg2_ms = now_ms();
             break;
         }
+        case CAN_ID_INV_MSG3:
+            // cluster.dbc InvMsg3 (BU_ INVERTER->CLUSTER, DLC8, 1000ms, 충전 전용) 바이트
+            // 배치: byte0=ChargePower byte1=TimeToFull byte2~7=예약. 2026-09-04(2차):
+            // 사용자가 DBC에서 TimeToFull을 16bit(byte1~2, [0|1440]min)에서
+            // 8bit(byte1 하나, [0|255]min)로 확정 — 여기도 맞춰 byte2를 더 이상 안 읽는다.
+            current_data.charge_power_kw = (float)rx_msg->data[0];    // factor1, [0|255]kW
+            current_data.time_to_full_min = rx_msg->data[1];          // factor1, [0|255]min
+            break;
         default:
             // 정의 안 된 ID는 조용히 무시 (디버깅 시엔 아래 주석 해제)
             // ESP_LOGD(TAG, "미처리 CAN ID: 0x%03lX", rx_msg->identifier);
@@ -261,6 +292,7 @@ void twai_tx_task(void *pvParameters) {
     uint32_t last_tx_failed = 0;
     bool tx_healthy = true;
     bool tx_healthy_prev = true;
+    uint32_t settings_tick = 0;
 
     bool ui_ok_prev = true;
 
@@ -342,6 +374,33 @@ void twai_tx_task(void *pvParameters) {
                         // ACK 실패는 여기서 안 잡힌다 — tx_link_healthy()가 담당.
                         ESP_LOGW(TAG, "ClusterAlive 큐 적재 실패: %s", esp_err_to_name(err));
                         tx_healthy = false;
+                    }
+                }
+
+                // ClusterSettings(0x500): Alive와 달리 "늦게 도착한 옛 값이 해롭다"는
+                // 성질이 없어서(그냥 마지막으로 조작한 설정값일 뿐) msgs_pending 스킵
+                // 로직을 그대로 갖다 쓰지 않는다 — 500ms 루프 중 2번에 1번만 시도.
+                settings_tick++;
+                if (settings_tick >= CLUSTER_SETTINGS_PERIOD_TICKS) {
+                    settings_tick = 0;
+                    ClusterSettings_t cs;
+                    cluster_settings_get(&cs);
+                    uint8_t flags = (cs.auto_headlight ? 0x01 : 0) |
+                                     (cs.auto_day_night ? 0x02 : 0) |
+                                     (cs.units_mph ? 0x04 : 0);
+                    twai_message_t settings_msg = {
+                        .identifier = CAN_ID_CLUSTER_SETTINGS,
+                        .data_length_code = 8,
+                        .data = {
+                            cs.brightness_pct,  // byte0: Brightness [0|100]%
+                            cs.regen_level,      // byte1: RegenLevel [0|3]
+                            flags,                // byte2: bit0=AutoHeadlight bit1=AutoDayNight bit2=Units
+                            0, 0, 0, 0, 0,        // byte3~7: 예약(향후 확장용)
+                        },
+                    };
+                    esp_err_t serr = twai_transmit(&settings_msg, pdMS_TO_TICKS(50));
+                    if (serr != ESP_OK) {
+                        ESP_LOGD(TAG, "ClusterSettings 큐 적재 실패: %s", esp_err_to_name(serr));
                     }
                 }
             }

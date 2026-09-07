@@ -37,6 +37,8 @@ BU_: CLUSTER INVERTER
 
 
 BO_ 512 InvMsg2: 8 INVERTER
+ SG_ AmbientTemp : 56|8@1+ (1,-40) [-40|215] "degC"  CLUSTER
+ SG_ CellDelta : 48|8@1+ (1,0) [0|255] "mV"  CLUSTER
  SG_ Odometer : 32|16@1+ (5,0) [0|327675] "km"  CLUSTER
  SG_ DriveRange : 24|8@1+ (1,0) [0|255] "km"  CLUSTER
  SG_ Temp : 16|8@1+ (1,-20) [-20|235] "degC"  CLUSTER
@@ -44,16 +46,32 @@ BO_ 512 InvMsg2: 8 INVERTER
  SG_ SOC : 0|8@1+ (1,0) [0|100] "%"  CLUSTER
 
 BO_ 256 InvMsg1: 8 INVERTER
+ SG_ ControllerTemp : 56|8@1+ (1,-20) [-20|235] "degC"  CLUSTER
+ SG_ MotorTemp : 48|8@1+ (1,-20) [-20|235] "degC"  CLUSTER
+ SG_ BrakeAbsWarn : 43|1@1+ (1,0) [0|1] ""  CLUSTER
+ SG_ Highbeam : 42|1@1+ (1,0) [0|1] ""  CLUSTER
+ SG_ TurnSignal : 40|2@1+ (1,0) [0|3] ""  CLUSTER
  SG_ RegenPower : 32|8@1+ (1,0) [0|255] "kW"  CLUSTER
  SG_ Power : 24|8@1+ (1,0) [0|255] "kW"  CLUSTER
  SG_ DTC : 16|8@1+ (1,0) [0|255] ""  CLUSTER
  SG_ DriveMode : 8|8@1+ (1,0) [0|3] ""  CLUSTER
  SG_ Speed : 0|8@1+ (1,-10) [-10|245] "km/h"  CLUSTER
 
+BO_ 1024 InvMsg3: 8 INVERTER
+ SG_ TimeToFull : 8|8@1+ (1,0) [0|255] "min"  CLUSTER
+ SG_ ChargePower : 0|8@1+ (1,0) [0|255] "kW"  CLUSTER
+
 BO_ 768 ClusterAlive: 8 CLUSTER
  SG_ ClusterUptime : 16|16@1+ (1,0) [0|65535] "s"  INVERTER
  SG_ ClusterStatus : 8|8@1+ (1,0) [0|255] ""  INVERTER
  SG_ AliveCounter : 0|8@1+ (1,0) [0|255] ""  INVERTER
+
+BO_ 1280 ClusterSettings: 8 CLUSTER
+ SG_ Units : 18|1@1+ (1,0) [0|1] ""  INVERTER
+ SG_ AutoDayNight : 17|1@1+ (1,0) [0|1] ""  INVERTER
+ SG_ AutoHeadlight : 16|1@1+ (1,0) [0|1] ""  INVERTER
+ SG_ RegenLevel : 8|8@1+ (1,0) [0|3] ""  INVERTER
+ SG_ Brightness : 0|8@1+ (1,0) [0|100] "%"  INVERTER
 
 
 
@@ -61,10 +79,26 @@ EV_ EnvKlemme30: 0 [0|1] "" 1 1 DUMMY_NODE_VECTOR0 Vector__XXX;
 
 EV_ EnvKlemme15: 0 [0|1] "" 0 2 DUMMY_NODE_VECTOR0 Vector__XXX;
 
+CM_ SG_ 512 AmbientTemp "Placeholder range, pending real spec.";
+CM_ SG_ 512 CellDelta "Max cell voltage delta within pack. Placeholder range, pending real spec.";
+CM_ SG_ 256 ControllerTemp "Placeholder range, pending real spec.";
+CM_ SG_ 256 MotorTemp "Placeholder range, pending real spec.";
+CM_ SG_ 256 BrakeAbsWarn "Combined brake/ABS telltale, single bit. Placeholder, pending real spec.";
+CM_ SG_ 256 Highbeam "Placeholder, pending real spec.";
+CM_ SG_ 256 TurnSignal "0=Off 1=Left 2=Right 3=Hazard. Placeholder, pending real spec.";
+CM_ BO_ 1024 "Charging telemetry, added 2026-09-04. Placeholder cycle time and ranges, pending real spec.";
+CM_ SG_ 1024 TimeToFull "Estimated time to 100% SOC. Placeholder range, pending real spec.";
+CM_ SG_ 1024 ChargePower "Placeholder range, pending real spec.";
 CM_ BO_ 768 "CLUSTER to INVERTER alive message, added 2026-08-07. See docs/design/can-signals.md for details.";
-CM_ SG_ 768 AliveCounter "Rolls over 0-255. Incremented when the frame is accepted by the TX buffer, NOT on bus ACK.";
-CM_ SG_ 768 ClusterStatus "Bit mask, NOT an enum: bit0=InvMsg1 rx ok, bit1=InvMsg2 rx ok, bit2=BLE app connected, bit3=DTC active, bit4=UI render task alive.";
 CM_ SG_ 768 ClusterUptime "Seconds since boot, saturates at 65535 instead of wrapping.";
+CM_ SG_ 768 ClusterStatus "Bit mask, NOT an enum: bit0=InvMsg1 rx ok, bit1=InvMsg2 rx ok, bit2=BLE app connected, bit3=DTC active, bit4=UI render task alive.";
+CM_ SG_ 768 AliveCounter "Rolls over 0-255. Incremented when the frame is accepted by the TX buffer, NOT on bus ACK.";
+CM_ BO_ 1280 "CLUSTER to INVERTER, driver-adjusted Setup tab settings, added 2026-09-04. Currently a local UI demo with no real actuation wired on the cluster side (no backlight PWM/NVS) -- this message is a placeholder pipe for when that wiring exists.";
+CM_ SG_ 1280 Units "0=km/h+km 1=mph+mi.";
+CM_ SG_ 1280 AutoDayNight "Auto day/night theme toggle state.";
+CM_ SG_ 1280 AutoHeadlight "Auto headlight toggle state.";
+CM_ SG_ 1280 RegenLevel "Regenerative braking level, 0=off 3=max.";
+CM_ SG_ 1280 Brightness "Display backlight brightness.";
 BA_DEF_  "MultiplexExtEnabled" ENUM  "No","Yes";
 BA_DEF_ BU_  "NodeLayerModules" STRING ;
 BA_DEF_ BO_  "GenMsgStartDelayTime" INT 0 65535;
@@ -104,8 +138,12 @@ BA_DEF_DEF_  "GenSigStartValue" 0;
 BA_ "BusType" "CAN";
 BA_ "GenMsgCycleTime" BO_ 512 200;
 BA_ "GenMsgCycleTime" BO_ 256 100;
+BA_ "GenMsgCycleTime" BO_ 1024 1000;
 BA_ "GenMsgCycleTime" BO_ 768 500;
+BA_ "GenMsgCycleTime" BO_ 1280 1000;
 BA_ "GenSigStartValue" SG_ 512 Temp 20;
 BA_ "GenSigStartValue" SG_ 256 Speed 10;
+VAL_ 256 TurnSignal 0 "Off" 1 "Left" 2 "Right" 3 "Hazard" ;
 VAL_ 256 DriveMode 0 "P" 1 "R" 2 "N" 3 "D" ;
+VAL_ 1280 Units 0 "km/h+km" 1 "mph+mi" ;
 

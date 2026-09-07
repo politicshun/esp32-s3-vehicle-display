@@ -7,9 +7,16 @@
 #include <stdint.h>
 
 /* 텔테일 5개는 스펙 순서 고정: 턴L, 상향등, 브레이크/ABS, EV경고(MIL), 턴R.
- * 오프 상태 = 18%(약 46/255) opa 고정, 절대 hidden 하지 않는다(스펙 §Iconography/§5).
- * 실데이터 배선(턴/상향등/브레이크는 CAN 신호 자체가 없어 영구 오프)은 phase 5. */
+ * 오프 상태 = 18%(약 46/255) opa 고정, 절대 hidden 하지 않는다(스펙 §Iconography/§5),
+ * 켜짐 = LV_OPA_COVER(불투명). 2026-09-04: turn_signal/highbeam/brake_abs_warn 신호를
+ * cluster.dbc에 추가(통상 범위 플레이스홀더)해서 배선 완료 — EV경고(MIL)는 새 신호
+ * 없이 기존 dtc_code 재사용(Faults 배너/상태단어와 같은 값). */
 #define TELLTALE_COUNT 5
+#define TT_TURN_L 0
+#define TT_HIGHBEAM 1
+#define TT_BRAKE_ABS 2
+#define TT_EV_WARN 3
+#define TT_TURN_R 4
 #define UI_OPA_OFF_18PCT 46
 
 typedef struct {
@@ -308,6 +315,22 @@ void ui_chrome_update(void)
         }
     }
 
+    /* 텔테일 5개: 값이 실제로 바뀔 때만 opa 재설정(다른 가드들과 동일 패턴).
+     * 턴시그널은 좌/우 두 아이콘이 같은 turn_signal 값을 나눠 보므로 한 번에 같이 판정. */
+    static bool tt_lit_prev[TELLTALE_COUNT] = {false, false, false, false, false};
+    bool tt_lit_now[TELLTALE_COUNT];
+    tt_lit_now[TT_TURN_L] = (d.turn_signal == 1) || (d.turn_signal == 3);
+    tt_lit_now[TT_HIGHBEAM] = d.highbeam;
+    tt_lit_now[TT_BRAKE_ABS] = d.brake_abs_warn;
+    tt_lit_now[TT_EV_WARN] = (d.dtc_code != 0); /* 새 신호 없이 dtc_code 재사용 */
+    tt_lit_now[TT_TURN_R] = (d.turn_signal == 2) || (d.turn_signal == 3);
+    for (int i = 0; i < TELLTALE_COUNT; i++) {
+        if (tt_lit_now[i] != tt_lit_prev[i]) {
+            tt_lit_prev[i] = tt_lit_now[i];
+            lv_obj_set_style_img_opa(s_telltales[i], tt_lit_now[i] ? LV_OPA_COVER : UI_OPA_OFF_18PCT, 0);
+        }
+    }
+
     /* 상태단어: CAN 링크 신선도가 DTC보다 우선한다. 링크가 끊기면 화면의 모든 값(dtc_code
      * 포함)이 마지막 수신값에서 멈춰 있으므로 "READY"조차 신뢰할 수 없다 — 그 상태에서
      * 초록불을 띄우면 오히려 위험하다(이전 단일페이지 ui.c, git history 5c0731e 이전,
@@ -328,7 +351,28 @@ void ui_chrome_update(void)
         }
     }
 
-    /* 시계/외기온/모터온도/컨트롤러온도: HARNESS-TODO — 실소스 없어 상시 "—" 고정,
-     * ui_chrome_build_header/footer()에서 이미 설정해둔 값 그대로 둔다(여기서 매 프레임
-     * 다시 쓸 이유 없음). */
+    /* 시계: HARNESS-TODO — RTC/SNTP 소스가 여전히 없어 상시 "—" 고정, build에서 설정해둔
+     * 값 그대로 둔다. 외기온/모터온도/컨트롤러온도는 2026-09-04에 신호가 생겨서 아래에서
+     * 갱신한다(통상 범위 플레이스홀더, docs/design/can-signals.md 참고). */
+    static int ambient_prev = INT32_MIN;
+    if (d.ambient_temp_c != ambient_prev) {
+        ambient_prev = d.ambient_temp_c;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d \xC2\xB0" "C", (int)d.ambient_temp_c);
+        lv_label_set_text(s_lbl_ambient, buf);
+    }
+    static int motor_temp_prev = INT32_MIN;
+    if (d.motor_temp_c != motor_temp_prev) {
+        motor_temp_prev = d.motor_temp_c;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d\xC2\xB0" "C", (int)d.motor_temp_c);
+        lv_label_set_text(s_lbl_motor_temp, buf);
+    }
+    static int ctrl_temp_prev = INT32_MIN;
+    if (d.controller_temp_c != ctrl_temp_prev) {
+        ctrl_temp_prev = d.controller_temp_c;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d\xC2\xB0" "C", (int)d.controller_temp_c);
+        lv_label_set_text(s_lbl_ctrl_temp, buf);
+    }
 }

@@ -26,6 +26,21 @@ typedef struct {
     float    regen_kw;      // 회생제동 출력 (kW, 정수 해상도). InvMsg1 byte4
     int16_t  sys_temp_c;    // 시스템 온도 (degC). InvMsg2 byte2, raw-20, [-20|235] — int8_t 범위(127) 초과라 int16_t 사용
 
+    // 2026-09-04: 위젯은 있는데 값이 없던 항목들 — docs/hardware/cluster.dbc에 신호
+    // 추가(통상 범위 플레이스홀더, 사용자가 디테일 확정 예정). docs/design/can-signals.md
+    // 참고. 값이 바뀌면 이 필드들의 스케일/범위도 같이 갱신할 것.
+    uint8_t  turn_signal;       // 0=off 1=left 2=right 3=hazard. InvMsg1 byte5 bit0-1
+    bool     highbeam;          // InvMsg1 byte5 bit2
+    bool     brake_abs_warn;    // 브레이크/ABS 텔테일 단일 비트(합쳐서 하나). InvMsg1 byte5 bit3
+    int16_t  motor_temp_c;      // 모터 온도 (degC). InvMsg1 byte6, raw-20, [-20|235]
+    int16_t  controller_temp_c; // 컨트롤러 온도 (degC). InvMsg1 byte7, raw-20, [-20|235]
+    uint8_t  cell_delta_mv;     // 팩 내 최대 셀전압 편차 (mV). InvMsg2 byte6, [0|255]
+    int16_t  ambient_temp_c;    // 외기온 (degC). InvMsg2 byte7, raw-40, [-40|215]
+    float    charge_power_kw;   // 충전 전력 (kW). InvMsg3(0x400,1000ms) byte0, [0|255]
+    uint16_t time_to_full_min;  // 완충 예상 시간 (분). InvMsg3 byte1, [0|255] (2026-09-04
+                                 // 사용자가 DBC에서 16bit->8bit로 축소 확정 — 필드 타입은
+                                 // uint16_t 그대로 둬도 값 범위엔 문제없어 안 바꿈)
+
     // 2026-08-07: CAN 링크 상태. 위 필드들과 달리 "수신한 값"이 아니라 "수신이 되고 있는지"다.
     // CAN이 끊기면 위 신호들은 마지막 값 그대로 멈춰 있으므로, UI가 그걸 최신값으로
     // 오해하지 않게 하려면 이 두 필드가 필요하다. main/twai.c의 twai_tx_task가 500ms마다 갱신.

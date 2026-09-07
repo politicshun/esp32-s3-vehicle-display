@@ -251,7 +251,12 @@ void lvgl_ui_task(void *pvParameters) {
     // 비용보다 훨씬 크다는 게 위 실측+공식 가이드로 확인됐다. flush_cb 자체는 코드
     // 변경 없음(color_map이 패널 자신의 fb든 별도 SRAM 버퍼든 esp_lcd_panel_draw_bitmap이
     // 알아서 처리).
-#define LVGL_DRAW_BUF_LINES 48  /* 800*48px = 화면 높이의 10% */
+/* 2026-09-04(5차): CAN 신호 9개 배선 후 task watchdog(LVGL 내부 힙 고갈, 2026-09-03과
+ * 동일 시그니처) 재발 — LV_MEM_SIZE_KILOBYTES를 40->48KB로 올리면서(sdkconfig.defaults
+ * 참고) 그 여유를 여기서 만든다. 9/3(2차)에 이미 실기기로 확인된 조합(48KB 힙 +
+ * 40라인 드로우버퍼, largest_free_block=69632B > 64000B 요구량, 드로우버퍼 할당
+ * 자체는 성공 확인됨) 그대로 되돌린다. */
+#define LVGL_DRAW_BUF_LINES 40
     size_t draw_buf_bytes = LCD_H_RES * LVGL_DRAW_BUF_LINES * sizeof(lv_color_t);
     /* MALLOC_CAP_DMA는 안 씀 — 이 버퍼는 CPU(LVGL 소프트웨어 렌더러)가 채워넣는 용도지
      * 하드웨어 DMA가 직접 읽는 게 아니다(esp_lcd_panel_draw_bitmap()의 일반 복사 경로가
@@ -315,6 +320,20 @@ void lvgl_ui_task(void *pvParameters) {
     s_disp_drv.ver_res = LCD_V_RES;
     s_disp_drv.flush_cb = lvgl_flush_cb;
     s_disp_drv.draw_buf = &s_draw_buf;
+    /* 2026-09-04(12차 시도, 실패로 롤백): full_refresh=0(LVGL 기본 partial-invalidate
+     * 모드)으로 한 번 바꿔봤다 — 처음엔 handler_avg가 13~22ms로 크게 개선됐는데, 그건
+     * Ride 탭 위젯 몇 개만 바뀌는 좁은 시나리오였다. 텔테일+모터/컨트롤러/외기온이
+     * 동시에 흔들리는 더 넓은 실동 부하로 재검증하니 **task watchdog이 반복 트리거**
+     * (IDLE1 미응답, lvgl_ui가 5초+ 동안 lv_timer_handler 안에서 안 빠져나옴) —
+     * 크래시가 아니라 진짜 멈춤. 백트레이스 확인 결과 refr_area()가 무효화된 영역
+     * 하나마다 트리 전체(4탭 전부, 숨겨진 탭 포함)를 훑는 LVGL v8의 알려진 비-full-
+     * refresh 비용 폭증 패턴(무효화 영역 수 × 전체 위젯 수)에 걸린 것으로 보인다 —
+     * 무효화 영역이 어느 정도(개별 가드로 줄여놓은 상태에서도) 넘어가면 정상 동작
+     * 시간이 아니라 무한정 늘어날 수 있다는 뜻. full_refresh=1은 최악의 경우도
+     * ~150~200ms로 **상한이 있다**(매번 트리 전체를 딱 한 번만 훑음) — 느리지만 절대
+     * 멈추지는 않는다. 차량용 디스플레이에서는 "일정하게 느림"이 "가끔 몇 초씩 완전
+     * 정지"보다 훨씬 안전하다고 판단해 되돌린다. 셀 단위 가드(ui_widget_cellbar.c,
+     * ui_tile_ride.c)는 full_refresh와 무관하게 유효한 최적화라 그대로 둔다. */
     s_disp_drv.full_refresh = 1;
     lv_disp_drv_register(&s_disp_drv);
 

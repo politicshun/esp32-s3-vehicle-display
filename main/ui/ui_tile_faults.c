@@ -18,10 +18,10 @@
  * raw hex 코드만 보여준다. AlertBanner는 스펙상 여러 개(다중 fault)지만 우리는
  * "최대 1개"만 취급하므로 배너도 최대 1개.
  *
- * 4칸 온도/전압 그리드: Motor/Controller/Cell delta는 대응 CAN 신호가 아예 없어
- * (계획 §2 데이터 갭) 영구 "-"(HARNESS-TODO, 절대 갱신 안 함). Pack만 sys_temp_c
- * 직결 — git history상 이 필드가 일관되게 "배터리/팩 온도"로 쓰였음을 재확인
- * (project 메모리 2026-09-02).
+ * 4칸 온도/전압 그리드: Pack은 sys_temp_c 직결 — git history상 이 필드가 일관되게
+ * "배터리/팩 온도"로 쓰였음을 재확인(project 메모리 2026-09-02). Motor/Controller/
+ * Cell delta는 2026-09-04에 cluster.dbc로 신호가 생겨서(통상 범위 플레이스홀더,
+ * docs/design/can-signals.md 참고) 배선했다.
  */
 
 static lv_obj_t *s_lbl_title;
@@ -29,7 +29,10 @@ static lv_obj_t *s_banner;
 static lv_obj_t *s_lbl_banner_title;
 static lv_obj_t *s_lbl_banner_code;
 
+static lv_obj_t *s_lbl_motor_val;
+static lv_obj_t *s_lbl_ctrl_val;
 static lv_obj_t *s_lbl_pack_val;
+static lv_obj_t *s_lbl_celldelta_val;
 
 /* card 오브젝트(그리드 배치용)를 반환하고 value 라벨은 *val_out에 담는다. */
 static lv_obj_t *build_stat_card(lv_obj_t *parent, const char *caption, const char *unit,
@@ -121,17 +124,17 @@ lv_obj_t *ui_tile_faults_build(lv_obj_t *tile_parent)
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
     lv_obj_set_style_pad_column(grid, 10, 0);
 
-    lv_obj_t *c, *v;
-    c = build_stat_card(grid, "MOTOR", "\xC2\xB0" "C", &v); /* °C — 소스 없음, 영구 "-" */
+    lv_obj_t *c;
+    c = build_stat_card(grid, "MOTOR", "\xC2\xB0" "C", &s_lbl_motor_val);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 0, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
 
-    c = build_stat_card(grid, "CONTROLLER", "\xC2\xB0" "C", &v); /* 소스 없음, 영구 "-" */
+    c = build_stat_card(grid, "CONTROLLER", "\xC2\xB0" "C", &s_lbl_ctrl_val);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 1, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
 
     c = build_stat_card(grid, "PACK", "\xC2\xB0" "C", &s_lbl_pack_val);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 2, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
 
-    c = build_stat_card(grid, "CELL DELTA", "V", &v); /* 소스 없음, 영구 "-" */
+    c = build_stat_card(grid, "CELL DELTA", "mV", &s_lbl_celldelta_val);
     lv_obj_set_grid_cell(c, LV_GRID_ALIGN_STRETCH, 3, 1, LV_GRID_ALIGN_STRETCH, 0, 1);
 
     return tile;
@@ -168,5 +171,29 @@ void ui_tile_faults_update(void)
         char buf[16];
         snprintf(buf, sizeof(buf), "%d", pack_temp_now);
         lv_label_set_text(s_lbl_pack_val, buf);
+    }
+
+    static int motor_temp_prev = INT32_MIN;
+    if ((int)d.motor_temp_c != motor_temp_prev) {
+        motor_temp_prev = (int)d.motor_temp_c;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d", motor_temp_prev);
+        lv_label_set_text(s_lbl_motor_val, buf);
+    }
+
+    static int ctrl_temp_prev = INT32_MIN;
+    if ((int)d.controller_temp_c != ctrl_temp_prev) {
+        ctrl_temp_prev = (int)d.controller_temp_c;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d", ctrl_temp_prev);
+        lv_label_set_text(s_lbl_ctrl_val, buf);
+    }
+
+    static int celldelta_prev = INT32_MIN;
+    if ((int)d.cell_delta_mv != celldelta_prev) {
+        celldelta_prev = (int)d.cell_delta_mv;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d", celldelta_prev);
+        lv_label_set_text(s_lbl_celldelta_val, buf);
     }
 }

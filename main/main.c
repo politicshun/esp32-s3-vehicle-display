@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "vehicle_data.h"
+#include "cluster_settings.h"
 #include "ble.h"
 
 extern void bsp_hardware_init(void);
@@ -31,6 +32,7 @@ void app_main(void) {
     // BSP HW data sharing & Mutex initialization
     bsp_hardware_init();
     vehicle_data_init();
+    cluster_settings_init();
     twai_init();   // twai_rx_task/twai_tx_task가 공유하는 드라이버 lifecycle 락 생성
     ble_init();
 

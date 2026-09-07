@@ -30,6 +30,7 @@ DBC_PATH = Path(__file__).resolve().parent.parent / "docs" / "hardware" / "clust
 
 MSG1_PERIOD_S = 0.100  # InvMsg1 (docs/hardware/cluster.dbc GenMsgCycleTime와 동일)
 MSG2_PERIOD_S = 0.200  # InvMsg2
+MSG3_PERIOD_S = 1.000  # InvMsg3 (2026-09-04 추가, 충전 전용 통상 범위 플레이스홀더)
 TICK_S = 0.02          # 갱신 주기는 20ms로 설정했음. (LVGL 갱신과 일치시킴)
 
 DRIVE_MODE = 3  # 항상 D — 기어 배지는 애니메이션이 없어서(즉시 전환) 반응성 테스트와 무관, 흔들면 오히려 헷갈림
@@ -95,17 +96,38 @@ class DriveState:
 
         self.odo_km += abs(speed) / 3600.0 * dt
 
+        # 2026-09-04: cluster.dbc에 추가된 신호(통상 범위 플레이스홀더, docs/design/
+        # can-signals.md 참고) — 실측/필터/디코딩 파이프라인 검증용으로 여기도 같이 채운다.
+        turn_signal = int(t / 6.0) % 4                  # 0=off 1=left 2=right 3=hazard, 6초마다 순환
+        highbeam = 1 if math.sin(2.0 * math.pi * t / 13.0) > 0 else 0
+        brake_abs_warn = 1 if regen > 40.0 else 0        # 회생 강할 때 제동 중이라고 가정한 데모 연동
+        motor_temp = max(-20.0, min(235.0, _osc(t, 60.0, 50.0, 10.0, 1.0)))
+        controller_temp = max(-20.0, min(235.0, _osc(t, 55.0, 45.0, 10.5, 2.0)))
+        cell_delta = max(0.0, min(255.0, _osc(t, 40.0, 40.0, 14.0, 0.6)))       # mV
+        ambient_temp = max(-40.0, min(85.0, _osc(t, 15.0, 20.0, 16.0, 5.0)))
+        charge_power = max(0.0, min(255.0, _osc(t, 5.5, 5.5, 18.0, 1.2)))       # kW
+        time_to_full = max(0.0, min(255.0, _osc(t, 90.0, 90.0, 20.0, 2.6)))    # min (2026-09-04: DBC 8bit로 축소, [0|255])
+
         return {
             "Speed": round(speed),
             "DriveMode": DRIVE_MODE,
             "DTC": 0,
             "Power": round(power),
             "RegenPower": round(regen),
+            "TurnSignal": turn_signal,
+            "Highbeam": highbeam,
+            "BrakeAbsWarn": brake_abs_warn,
+            "MotorTemp": round(motor_temp),
+            "ControllerTemp": round(controller_temp),
             "SOC": round(soc),
             "DClinkVoltage": round(voltage),
             "Temp": round(temp),
             "DriveRange": round(range_km),
             "Odometer": round(min(327675.0, self.odo_km)),
+            "CellDelta": round(cell_delta),
+            "AmbientTemp": round(ambient_temp),
+            "ChargePower": round(charge_power),
+            "TimeToFull": round(time_to_full),
         }
 
 
@@ -136,11 +158,13 @@ def main():
     db = cantools.database.load_file(str(DBC_PATH)) # dbc 파일 불러오기 -> CAN 메시지, 데이터 맵핑
     msg1 = db.get_message_by_name("InvMsg1")
     msg2 = db.get_message_by_name("InvMsg2")
+    msg3 = db.get_message_by_name("InvMsg3")
 
     bus = can.interface.Bus(interface="kvaser", channel=args.channel, bitrate=args.bitrate)
     print(f"KVASER channel {args.channel} 열림 ({args.bitrate}bps). "
           f"InvMsg1={hex(msg1.frame_id)}({MSG1_PERIOD_S*1000:.0f}ms) "
-          f"InvMsg2={hex(msg2.frame_id)}({MSG2_PERIOD_S*1000:.0f}ms) 송신 시작. Ctrl+C로 종료.")
+          f"InvMsg2={hex(msg2.frame_id)}({MSG2_PERIOD_S*1000:.0f}ms) "
+          f"InvMsg3={hex(msg3.frame_id)}({MSG3_PERIOD_S*1000:.0f}ms) 송신 시작. Ctrl+C로 종료.")
 
     if args.decoy:
         print(f"[decoy] 필터 검증 모드: {len(DECOY_IDS)}개 미끼 ID를 "
@@ -149,7 +173,7 @@ def main():
         print("[decoy] 보드 시리얼 로그에 위 ID의 RX가 하나도 안 찍혀야 필터 정상.")
 
     state = DriveState()
-    next_msg1 = next_msg2 = time.monotonic()
+    next_msg1 = next_msg2 = next_msg3 = time.monotonic()
     next_decoy = time.monotonic()
     decoy_sent = 0
     last_tick = time.monotonic()
@@ -171,6 +195,9 @@ def main():
                 data1 = msg1.encode({
                     "Speed": values["Speed"], "DriveMode": values["DriveMode"],
                     "DTC": values["DTC"], "Power": values["Power"], "RegenPower": values["RegenPower"],
+                    "TurnSignal": values["TurnSignal"], "Highbeam": values["Highbeam"],
+                    "BrakeAbsWarn": values["BrakeAbsWarn"], "MotorTemp": values["MotorTemp"],
+                    "ControllerTemp": values["ControllerTemp"],
                 })
                 bus.send(can.Message(arbitration_id=msg1.frame_id, data=data1, is_extended_id=False))
                 next_msg1 += MSG1_PERIOD_S
@@ -179,10 +206,18 @@ def main():
                 data2 = msg2.encode({
                     "SOC": values["SOC"], "DClinkVoltage": values["DClinkVoltage"],
                     "Temp": values["Temp"], "DriveRange": values["DriveRange"],
-                    "Odometer": values["Odometer"],
+                    "Odometer": values["Odometer"], "CellDelta": values["CellDelta"],
+                    "AmbientTemp": values["AmbientTemp"],
                 })
                 bus.send(can.Message(arbitration_id=msg2.frame_id, data=data2, is_extended_id=False))
                 next_msg2 += MSG2_PERIOD_S
+
+            if now >= next_msg3:
+                data3 = msg3.encode({
+                    "ChargePower": values["ChargePower"], "TimeToFull": values["TimeToFull"],
+                })
+                bus.send(can.Message(arbitration_id=msg3.frame_id, data=data3, is_extended_id=False))
+                next_msg3 += MSG3_PERIOD_S
 
             if args.decoy and now >= next_decoy:
                 # 페이로드는 ID를 알아보기 쉽게 채운다(보드 로그에 찍히면 어느 미끼인지 바로 보이게).

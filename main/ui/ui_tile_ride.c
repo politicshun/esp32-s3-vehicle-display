@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 /*
  * ui_tile_ride.c — Voltline Ride 탭 (phase 6, 계획 §5/§7-1).
@@ -47,6 +48,8 @@ static lv_obj_t *s_lbl_power_val;
 static lv_obj_t *s_lbl_power_label;
 static lv_obj_t *s_flow_regen[FLOW_HALF_CELLS];
 static lv_obj_t *s_flow_power[FLOW_HALF_CELLS];
+static bool s_flow_regen_lit[FLOW_HALF_CELLS]; /* 마지막으로 실제 그려진 켜짐/꺼짐 상태 */
+static bool s_flow_power_lit[FLOW_HALF_CELLS];
 
 static lv_obj_t *s_lbl_trip_val;
 static lv_obj_t *s_lbl_odo_val;
@@ -362,10 +365,24 @@ void ui_tile_ride_update(void)
     if (regen_lit != regen_lit_prev || power_lit != power_lit_prev) {
         regen_lit_prev = regen_lit;
         power_lit_prev = power_lit;
+        /* 2026-09-04(2차, KVASER 실동 부하 실측): 경계가 한 칸만 움직여도 20칸
+         * 전부 set_style을 불러서 lv_obj_invalidate()가 20개씩 쌓였다 — LVGL의
+         * invalidate 버퍼가 32칸 고정(LV_INV_BUF_SIZE)이라 다른 위젯 변경과 겹치면
+         * 자리가 없어 조용히 화면 전체 무효화로 빠진다(full_refresh=0으로 바꿔도
+         * handler_avg가 안 줄던 원인, ui_widget_cellbar.c 상단 주석 참고). 실제로
+         * 켜짐/꺼짐이 바뀐 셀만 건드리도록 셀 단위 가드 추가. */
         for (int i = 0; i < FLOW_HALF_CELLS; i++) {
             int from = FLOW_HALF_CELLS - i; /* 스펙: regen은 tick에서 왼쪽으로 채워짐 */
-            lv_obj_set_style_bg_color(s_flow_regen[i], from <= regen_lit ? UI_ENERGY_REGEN : UI_TRACK_EMPTY, 0);
-            lv_obj_set_style_bg_color(s_flow_power[i], (i + 1) <= power_lit ? UI_SIGNAL_CAUTION : UI_TRACK_EMPTY, 0);
+            bool want_regen_lit = from <= regen_lit;
+            if (s_flow_regen_lit[i] != want_regen_lit) {
+                s_flow_regen_lit[i] = want_regen_lit;
+                lv_obj_set_style_bg_color(s_flow_regen[i], want_regen_lit ? UI_ENERGY_REGEN : UI_TRACK_EMPTY, 0);
+            }
+            bool want_power_lit = (i + 1) <= power_lit;
+            if (s_flow_power_lit[i] != want_power_lit) {
+                s_flow_power_lit[i] = want_power_lit;
+                lv_obj_set_style_bg_color(s_flow_power[i], want_power_lit ? UI_SIGNAL_CAUTION : UI_TRACK_EMPTY, 0);
+            }
         }
     }
 

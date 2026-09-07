@@ -22,7 +22,12 @@
 | 2 | dtc_code | (1, 0) | [0\|255], 단일 열거값(비트마스크 아님) | **자체 확정 — 인버터측 구현/실기 검증 대기** |
 | 3 | power_kw (Power) | (1, 0) | [0\|255] kW, 정수 해상도 | **자체 확정 — 인버터측 구현/실기 검증 대기** |
 | 4 | regen_kw (RegenPower) | (1, 0) | [0\|255] kW, 정수 해상도 | **자체 확정 — 인버터측 구현/실기 검증 대기** |
-| 5~7 | (예약) | - | - | 미사용, 향후 확장용으로 비워둠 |
+| 5 bit0~1 | TurnSignal | (1, 0) | [0\|3], VAL_: 0=Off 1=Left 2=Right 3=Hazard | **2026-09-04 추가 — 통상 범위 플레이스홀더, 사용자가 디테일 확정 예정** |
+| 5 bit2 | Highbeam | (1, 0) | [0\|1] | **2026-09-04 추가 — 플레이스홀더** |
+| 5 bit3 | BrakeAbsWarn | (1, 0) | [0\|1], 브레이크/ABS 텔테일 단일 비트(합쳐서 하나) | **2026-09-04 추가 — 플레이스홀더** |
+| 5 bit4~7 | (예약) | - | - | 미사용 |
+| 6 | MotorTemp | (1, -20) | [-20\|235] degC | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
+| 7 | ControllerTemp | (1, -20) | [-20\|235] degC | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
 
 ## InvMsg2 (CAN ID 0x200 / 512, DLC 8, 주기 200ms, INVERTER → CLUSTER)
 
@@ -35,13 +40,31 @@
 | 2 | sys_temp_c (Temp) | (1, -20) | [-20\|235] degC | **자체 확정 — 인버터측 구현/실기 검증 대기** |
 | 3 | range_km (DriveRange) | (1, 0) | [0\|255] km | **자체 확정 — 인버터측 구현/실기 검증 대기** |
 | 4~5 | odo_km (Odometer) | (5, 0), 16bit LE | [0\|327675] km | **자체 확정 — 인버터측 구현/실기 검증 대기** (2026-07-31: 24bit/factor1 → 16bit/factor5 압축, 실사용 상한 약 30만km 기준 5km 해상도) |
-| 6~7 | (예약) | - | - | 미사용, 향후 확장용으로 비워둠 |
+| 6 | CellDelta | (1, 0) | [0\|255] mV, 팩 내 최대 셀전압 편차 | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
+| 7 | AmbientTemp | (1, -40) | [-40\|215] degC | **2026-09-04 사용자 확정**(범위를 -40~85에서 -40~215로 넓힘, factor/offset은 그대로라 코드 변경 없음) |
+
+## InvMsg3 (CAN ID 0x400 / 1024, DLC 8, 주기 1000ms, INVERTER → CLUSTER)
+
+**2026-09-04 신규 추가.** 충전 관련 신호 — InvMsg1/InvMsg2의 남는 바이트(각 3/2바이트)로도
+부족해서 새 메시지로 뺐다. 충전 중에만 의미 있는 값이라 주기를 가장 느리게(1000ms) 잡았다.
+
+| Byte | 신호 | 스케일(factor,offset) | 범위 | 상태 |
+|---|---|---|---|---|
+| 0 | ChargePower | (1, 0) | [0\|255] kW | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
+| 1 | TimeToFull | (1, 0) | [0\|255] min | **2026-09-04 사용자 확정**(처음엔 8bit 자리 부족해서 16bit/byte1~2/[0\|1440]min으로 잡았었는데, 8bit/byte1 하나/[0\|255]min으로 축소 — `main/twai.c`/`main/include/vehicle_data.h` 같이 갱신 완료) |
+| 2~7 | (예약) | - | - | 미사용, 향후 확장용으로 비워둠 |
+
+~~⚠️ 수신 필터 주의~~ **2026-09-04 해결됨**: `main/twai.c`를 single filter mode로
+전환해서 0x100/0x200/0x400 셋 다 통과하도록 넓히고, 나머지 오검출은
+`handle_rx_message()`의 switch default에서 소프트웨어로 버리게 했다(아래 "수신 필터"
+문단 참고). 실기기로 0x100/0x200/0x400 전부 정상 수신 확인 완료.
 
 ## ClusterAlive (CAN ID 0x300 / 768, DLC 8, 주기 500ms, CLUSTER → INVERTER)
 
-2026-08-07 추가. **이 저장소가 송신하는 유일한 메시지**로, 인버터 쪽이 클러스터의 생존과
-상태를 판정할 수 있게 한다. ID/주기/페이로드는 사용자 결정으로 확정(추측 아님) —
-인버터측 구현/실기 검증은 대기 중.
+2026-08-07 추가. ~~이 저장소가 송신하는 유일한 메시지~~(2026-09-04: ClusterSettings도
+추가돼서 더 이상 유일하지 않음, 아래 참고) — 인버터 쪽이 클러스터의 생존과 상태를
+판정할 수 있게 한다. ID/주기/페이로드는 사용자 결정으로 확정(추측 아님) — 인버터측
+구현/실기 검증은 대기 중.
 
 | Byte | 신호 | 스케일(factor,offset) | 범위 | 상태 |
 |---|---|---|---|---|
@@ -102,17 +125,47 @@ ACK를 받았다"가 아니라 "TX 버퍼/큐에 적재됐다"는 뜻이다** �
 UI(페이지 4 Vehicle Status)에 반영된다. 이 판정 결과는 ClusterAlive 페이로드에는 넣지
 않았다 — 송신이 실패하는 상황이면 그 프레임 자체가 인버터에 도달하지 못하므로 무의미하다.
 
-## 수신 필터 (2026-08-07)
+## ClusterSettings (CAN ID 0x500 / 1280, DLC 8, 주기 1000ms, CLUSTER → INVERTER)
 
-`main/twai.c`는 SJA1000 계열 **하드웨어 어셉턴스 필터를 dual filter mode**로 걸어
-표준 데이터 프레임 **0x100과 0x200만** 통과시킨다 (그 외 ID, 확장 프레임, RTR은
-하드웨어에서 차단). 계산 근거는 `twai_start_with_retry()`의 주석 참고.
+2026-09-04 추가. Setup 탭 5개 항목 중 인버터로 실제 반영해야 하는 4개(단위 전환
+제외하면 5개 다) — 밝기/회생레벨/자동상향등/자동주야간/단위. `ClusterAlive`(헬스체크
+전용)에 안 섞고 새 메시지로 분리(관심사 분리 + 송신 메시지라 수신 필터와 무관해서
+비용 없음). **통상 범위 플레이스홀더** — 사용자가 디테일 확정 예정.
 
-**수신 대상 ID가 3개 이상으로 늘어나면 dual filter로는 정확 매칭이 불가능하다** —
-마스크를 넓혀 통과시키고 `handle_rx_message()`의 `switch` `default`에서 거르는 절충이
-필요하며, 그때 이 문단과 코드 주석을 같이 갱신할 것.
+| Byte | 신호 | 스케일(factor,offset) | 범위 | 상태 |
+|---|---|---|---|---|
+| 0 | Brightness | (1, 0) | [0\|100] % | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
+| 1 | RegenLevel | (1, 0) | [0\|3] | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
+| 2 bit0 | AutoHeadlight | (1, 0) | [0\|1] | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
+| 2 bit1 | AutoDayNight | (1, 0) | [0\|1] | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
+| 2 bit2 | Units | (1, 0) | [0\|1], VAL_: 0=km/h+km 1=mph+mi | **2026-09-04 추가 — 통상 범위 플레이스홀더** |
+| 3~7 | (예약) | - | - | 미사용, 향후 확장용으로 비워둠 |
 
-송신하는 `ClusterAlive`(0x300)는 self-reception을 요청하지 않으므로 이 필터와 무관하다.
+**여전히 로컬 UI 데모다** — 이 메시지가 생겼다고 Setup 탭이 실제 배선된 건 아니다.
+백라이트 PWM 드라이버·NVS 퍼시스턴스가 여전히 없어서(`main/ui/ui_tile_setup.c` 상단
+주석 참고) 재부팅하면 초기값으로 돌아간다. 클러스터 쪽 값을 담아서 **CAN으로 내보내는
+파이프라인만** 만든 것 — 인버터가 이걸 받아서 실제로 뭘 하는지는 인버터측 구현 영역.
+
+`main/cluster_settings.h`/`.c`가 이 5개 값을 들고 있고(뮤텍스 보호, `vehicle_data.h`와
+동일 패턴이지만 방향이 반대라 별도 모듈), `main/ui/ui_tile_setup.c`의 슬라이더/스위치
+콜백이 여기 쓰고, `main/twai.c`의 `twai_tx_task`가 `ClusterAlive`와 같은 루프에서
+1000ms마다(2 사이클에 1번) 읽어서 보낸다.
+
+## 수신 필터 (2026-08-07, 2026-09-04 갱신)
+
+`main/twai.c`는 SJA1000 계열 **하드웨어 어셉턴스 필터**를 건다. 2026-08-07엔 dual
+filter mode로 0x100/0x200 정확히 두 개만 통과시켰는데, **2026-09-04에 InvMsg3(0x400)가
+추가되면서 수신 대상이 3개가 돼 dual filter로는 정확 매칭이 불가능해졌다** — mask는
+"이 비트는 신경 안 씀"만 표현 가능하고 "이 세 비트 중 정확히 하나만 켜짐" 조건은
+표현 못 하기 때문. **해결**: single filter mode로 전환해서 ID 상위 3비트(0x100/0x200/
+0x400에 해당)를 통째로 don't-care 처리해 셋 다 통과시키고, 그 대신 같이 통과되는
+0x000/0x300/0x500/0x600/0x700(하위 바이트가 0인 다른 조합)은 `handle_rx_message()`의
+`switch` `default`에서 소프트웨어로 버린다. 계산 근거는 `twai_start_with_retry()`의
+주석 참고. 실기기로 0x100/0x200/0x400 전부 정상 수신, decoy ID(시뮬레이터
+`--decoy` 옵션) 오검출 없음 확인 완료.
+
+송신하는 `ClusterAlive`(0x300)/`ClusterSettings`(0x500)는 self-reception을 요청하지
+않으므로 이 필터와 무관하다(필터는 수신에만 적용, 송신 프레임은 필터를 안 거침).
 
 ---
 
@@ -120,10 +173,15 @@ UI(페이지 4 Vehicle Status)에 반영된다. 이 판정 결과는 ClusterAliv
 `speed`/`sys_temp_c`는 2의 보수가 아니라 **offset을 산술로 뺀 값**으로 표현한다
 (예: `speed` raw=5 → 물리값 5-10=-5km/h). `odo_km`는 `raw * 5`로 복원한다.
 
-`main/twai.c`가 이 두 메시지를 언패킹해서 `main/include/vehicle_data.h`의 `VehicleData_t`에
-채운다. TRIP/시계/외기온도는 여전히 이 DBC에도, `VehicleData_t`에도 소스가 없어
-`main/ui/ui.c`에서 정적 `--` placeholder(`HARNESS-TODO`)로 남아있다 — InvMsg1의
-byte5~7, InvMsg2의 byte6~7이 비어있으니 필요해지면 거기 채우면 된다.
+`main/twai.c`가 이 메시지들을 언패킹해서 `main/include/vehicle_data.h`의 `VehicleData_t`에
+채운다 — 2026-09-04 추가분(TurnSignal/Highbeam/BrakeAbsWarn/MotorTemp/ControllerTemp/
+AmbientTemp/CellDelta/ChargePower/TimeToFull) 전부 `main/twai.c` 언패킹 + UI 배선까지
+완료됨(main/ui/ui_chrome.c 텔테일·푸터·헤더, main/ui/ui_tile_faults.c, main/ui/
+ui_tile_charging.c). 시계(RTC/SNTP 없음)·VIN/FW(정적 식별정보라 주기적 신호 구조에 안
+맞음)·폰기기명(BLE GAP, CAN 무관)은 여전히 CAN RX로 못 푸는 별도 카테고리로 남는다.
+Setup 탭 설정값(밝기/회생레벨/자동상향등/자동주야간/단위)은 반대로 CLUSTER→INVERTER
+TX가 필요한 항목이라 이 RX 신호들과는 별개 — `ClusterSettings`(0x500, 아래 참고)로
+배선 완료.
 
 CAN ID/스케일/노드명/우선도 배치가 바뀌면 이 표, `docs/hardware/cluster.dbc`
 (및 원본 Desktop `cluster.dbc`), `main/twai.c`, `main/include/vehicle_data.h`,
